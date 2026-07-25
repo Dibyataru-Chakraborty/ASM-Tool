@@ -1,0 +1,3 @@
+"""
+Assets API module.
+"""

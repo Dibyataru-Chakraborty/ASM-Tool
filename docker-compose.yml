@@ -1,0 +1,137 @@
+version: '3.9'
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: asm_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: asm_user
+      POSTGRES_PASSWORD: asm_password
+      POSTGRES_DB: asm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asm_user -d asm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - asm_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: asm_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - asm_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asm_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - screenshots:/app/screenshots
+      - pd_tools:/usr/local/pd_tools
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    networks:
+      - asm_network
+
+
+  pd_installer:
+    image: alpine:latest
+    container_name: asm_pd_installer
+    restart: "no"
+    volumes:
+      - pd_tools:/pd_tools
+    command: >
+      sh -c "
+        apk add --no-cache wget tar &&
+        cd /tmp &&
+        echo 'Downloading subfinder...' &&
+        wget -q https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_linux_amd64.zip -O subfinder.zip &&
+        unzip -q subfinder.zip subfinder && mv subfinder /pd_tools/ &&
+        echo 'Downloading dnsx...' &&
+        wget -q https://github.com/projectdiscovery/dnsx/releases/latest/download/dnsx_linux_amd64.zip -O dnsx.zip &&
+        unzip -q dnsx.zip dnsx && mv dnsx /pd_tools/ &&
+        echo 'Downloading naabu...' &&
+        wget -q https://github.com/projectdiscovery/naabu/releases/latest/download/naabu_linux_amd64.zip -O naabu.zip &&
+        unzip -q naabu.zip naabu && mv naabu /pd_tools/ &&
+        echo 'Downloading httpx...' &&
+        wget -q https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_linux_amd64.zip -O httpx.zip &&
+        unzip -q httpx.zip httpx && mv httpx /pd_tools/ &&
+        echo 'Downloading nuclei...' &&
+        wget -q https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip -O nuclei.zip &&
+        unzip -q nuclei.zip nuclei && mv nuclei /pd_tools/ &&
+        echo 'Downloading gowitness...' &&
+        wget -q https://github.com/sensepost/gowitness/releases/latest/download/gowitness-linux-amd64 -O /pd_tools/gowitness &&
+        chmod +x /pd_tools/* &&
+        echo 'All ProjectDiscovery tools installed successfully!'
+      "
+    networks:
+      - asm_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: asm_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - asm_network
+
+  nginx:
+    image: nginx:alpine
+    container_name: asm_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - screenshots:/app/screenshots:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - asm_network
+
+volumes:
+  postgres_data:
+  screenshots:
+  pd_tools:
+  nuclei_templates:
+
+networks:
+  asm_network:
+    driver: bridge

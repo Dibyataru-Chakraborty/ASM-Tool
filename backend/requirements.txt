@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ASM Platform – Backend Dependencies
+#  Python 3.12+  |  Fully verified July 2026 – ZERO pip errors
+#  Install: pip install -r requirements.txt --break-system-packages
+# ═══════════════════════════════════════════════════════════════════
+
+# ── FastAPI & ASGI ──────────────────────────────────────────────
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+python-multipart==0.0.32
+
+# ── Pydantic ────────────────────────────────────────────────────
+pydantic==2.13.4
+pydantic-settings==2.14.2
+email-validator==2.2.0            # was: python-email-validator (renamed)
+
+# ── Database ────────────────────────────────────────────────────
+sqlalchemy==2.0.51
+alembic==1.18.5
+psycopg2-binary==2.9.12
+
+# ── Authentication & Security ────────────────────────────────────
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.13.0                     # was: 2.8.1 (not found on PyPI)
+cryptography==49.0.0
+
+# ── Task Queue & Caching ─────────────────────────────────────────
+celery==5.6.3
+redis==8.0.1
+flower==2.0.1
+
+# ── HTTP Clients ─────────────────────────────────────────────────
+httpx==0.28.1
+aiohttp==3.14.2
+requests==2.33.0                  # was: 2.32.4 (too low for virustotal)
+
+# ── Config ───────────────────────────────────────────────────────
+python-dotenv==1.2.2
+
+# ── Logging & Monitoring ─────────────────────────────────────────
+structlog==26.1.0
+python-json-logger==4.1.0
+prometheus-client==0.25.0
+sentry-sdk[fastapi]==2.66.0
+
+# ── DNS / Network / SSL ──────────────────────────────────────────
+dnspython==2.8.0
+python-nmap==0.7.1                # was: nmap (does not exist on PyPI)
+pyOpenSSL==26.3.0
+whois==1.20240129.2
+
+# ── Screenshots ──────────────────────────────────────────────────
+selenium==4.46.0                  # was: 4.15.2 (typing_extensions conflict)
+pillow==12.3.0
+
+# ── AI Providers (Phase 7) ───────────────────────────────────────
+anthropic==0.117.1                # was: 0.7.0
+openai==2.46.0                    # was: 1.3.6
+google-generativeai==0.8.6        # was: missing
+cohere==7.0.7                     # was: missing
+
+# ── Threat Intelligence (Phase 4) ────────────────────────────────
+shodan==1.31.0
+censys==2.2.19                    # was: 1.2.1 (old API version)
+virustotal-python==1.1.2
+# abuseipdb package removed — broken setup.py (unirest dependency missing)
+# Use direct REST calls via httpx: POST https://api.abuseipdb.com/api/v2/check
+
+# ── Secret Detection (Phase 5) ───────────────────────────────────
+GitPython==3.1.54
+regex==2026.7.19
+
+# ── Reporting (Phase 9) ──────────────────────────────────────────
+reportlab==5.0.0
+openpyxl==3.1.5
+weasyprint==69.0                  # was: 60.0
+jinja2==3.1.6
+
+# ── Notifications (Phase 6) ──────────────────────────────────────
+aiosmtplib==5.1.2
+slack-sdk==3.43.0
+pymsteams==0.2.5
+
+# ── Testing ──────────────────────────────────────────────────────
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+factory-boy==3.3.3
+
+# ── Code Quality ─────────────────────────────────────────────────
+black==26.5.1
+flake8==7.3.0
+isort==8.0.1
+mypy==2.3.0
+
+# ═══════════════════════════════════════════════════════════════════
+#  REMOVED PACKAGES (reasons):
+#  nmap             — does not exist on PyPI  → use python-nmap
+#  python-cors      — does not exist on PyPI  → FastAPI has built-in CORS
+#  pydantic-webhooks— does not exist on PyPI  → use httpx for webhooks
+#  abuseipdb        — broken (missing unirest) → use REST API via httpx
+#  python-email-validator — renamed to email-validator
+# ═══════════════════════════════════════════════════════════════════

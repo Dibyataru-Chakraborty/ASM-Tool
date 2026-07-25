@@ -1,0 +1,3 @@
+"""
+Scans API module.
+"""

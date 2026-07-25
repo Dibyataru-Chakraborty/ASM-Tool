@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 8%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 11%;
+    --card-foreground: 213 31% 91%;
+    --border: 216 34% 17%;
+    --primary: 210 100% 56%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 222 47% 14%;
+    --muted: 223 47% 14%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 216 34% 17%;
+    --destructive: 0 63% 55%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-[#0d1117] text-gray-100 antialiased; }
+  ::-webkit-scrollbar { @apply w-1.5; }
+  ::-webkit-scrollbar-track { @apply bg-gray-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-700 rounded-full; }
+}
+
+@layer components {
+  .card { @apply bg-[#161b22] border border-[#30363d] rounded-xl; }
+  .badge-critical { @apply bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-xs font-medium; }
+  .badge-high { @apply bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded text-xs font-medium; }
+  .badge-medium { @apply bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded text-xs font-medium; }
+  .badge-low { @apply bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded text-xs font-medium; }
+  .badge-info { @apply bg-gray-500/10 text-gray-400 border border-gray-500/20 px-2 py-0.5 rounded text-xs font-medium; }
+  .btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-secondary { @apply bg-[#21262d] hover:bg-[#30363d] text-gray-300 px-4 py-2 rounded-lg font-medium transition-all duration-200 border border-[#30363d]; }
+  .btn-danger { @apply bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg font-medium transition-all duration-200; }
+  .input { @apply bg-[#0d1117] border border-[#30363d] text-gray-100 placeholder-gray-500 rounded-lg px-3 py-2 w-full focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200; }
+  .table-row { @apply border-b border-[#21262d] hover:bg-[#1c2128] transition-colors duration-150; }
+  .sidebar-item { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-[#21262d] transition-all duration-200 cursor-pointer; }
+  .sidebar-item-active { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-blue-400 bg-blue-500/10 border border-blue-500/20; }
+  .stat-card { @apply card p-5 flex flex-col gap-2; }
+}

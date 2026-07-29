@@ -2,17 +2,30 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
+import {
+  Bot,
+  Bug,
+  CalendarClock,
+  FileText,
+  Globe2,
+  History,
+  LayoutDashboard,
+  LogOut,
+  Server,
+  Settings,
+  Shield,
+} from 'lucide-react'
 
 const NAV = [
-  { href: '/dashboard',       icon: '🏠', label: 'Dashboard'       },
-  { href: '/assets',          icon: '🖥️', label: 'Assets'          },
-  { href: '/scheduler',       icon: '🕐', label: 'Scheduler'       },
-  { href: '/scans',           icon: '🔭', label: 'Scan History'    },
-  { href: '/recon',           icon: '🌐', label: 'Recon Engine'    },
-  { href: '/shannon',         icon: '🤖', label: 'AI Pentest'      },
-  { href: '/vulnerabilities', icon: '🐛', label: 'Vulnerabilities' },
-  { href: '/reports',         icon: '📄', label: 'Reports'         },
-  { href: '/settings',        icon: '⚙️', label: 'Settings'        },
+  { href: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard'       },
+  { href: '/assets',          icon: Server,          label: 'Assets'          },
+  { href: '/scheduler',       icon: CalendarClock,   label: 'Scheduler'       },
+  { href: '/scans',           icon: History,         label: 'Scan History'    },
+  { href: '/recon',           icon: Globe2,          label: 'Recon Engine'    },
+  { href: '/shannon',         icon: Bot,             label: 'AI Pentest'      },
+  { href: '/vulnerabilities', icon: Bug,             label: 'Vulnerabilities' },
+  { href: '/reports',         icon: FileText,        label: 'Reports'         },
+  { href: '/settings',        icon: Settings,        label: 'Settings'        },
 ]
 
 export default function Sidebar() {
@@ -23,7 +36,7 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-screen w-52 bg-[#010409] border-r border-[#21262d] flex flex-col z-50">
       <div className="px-4 py-4 border-b border-[#21262d]">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🛡️</span>
+          <Shield className="h-5 w-5 text-blue-400" aria-hidden="true" />
           <div>
             <p className="text-sm font-bold text-gray-100 leading-none">ASM Platform</p>
             <p className="text-[10px] text-gray-600 mt-0.5">Attack Surface Mgmt</p>
@@ -34,9 +47,10 @@ export default function Sidebar() {
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
         {NAV.map(n => {
           const active = path === n.href || (n.href !== '/dashboard' && path.startsWith(n.href + '/')) || path === n.href
+          const Icon = n.icon
           return (
             <Link key={n.href} href={n.href} className={active ? 'nav-active' : 'nav-item'}>
-              <span className="text-base leading-none">{n.icon}</span>
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{n.label}</span>
             </Link>
           )
@@ -49,7 +63,8 @@ export default function Sidebar() {
           <p className="text-[10px] text-gray-600 capitalize">{user?.role}</p>
         </div>
         <button onClick={logout} className="nav-item w-full text-red-400 hover:text-red-300 hover:bg-red-500/10">
-          <span>🚪</span><span>Logout</span>
+          <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Logout</span>
         </button>
       </div>
     </aside>

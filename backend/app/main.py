@@ -5,17 +5,58 @@ Main FastAPI application for ASM Platform.
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
+import asyncio
+from contextlib import asynccontextmanager, suppress
 import logging
 from app.config import settings
 from app.utils.logger import logger
 from app.utils.database import init_db, close_db
 from app.exceptions import ASMException
 from app.api.v1.router import router as v1_router
+from app.services.scheduler_service import scheduler_loop
 
 
 # Setup logging
 logging.basicConfig(level=settings.log_level)
+
+
+def reconcile_interrupted_scans() -> int:
+    """Fail in-process scan jobs that could not survive a backend restart."""
+    from datetime import datetime, timezone
+
+    from app.models import Domain, Scan
+    from app.utils.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        interrupted = db.query(Scan).filter(Scan.status.in_(("pending", "running"))).all()
+        if not interrupted:
+            return 0
+
+        completed_at = datetime.now(timezone.utc)
+        for scan in interrupted:
+            previous_status = scan.status
+            scan.status = "failed"
+            scan.completed_at = completed_at
+            scan.error_message = (
+                f"Scan was interrupted while {previous_status} because the backend restarted. "
+                "Start a new scan to run the complete tool pipeline."
+            )
+            domain = db.query(Domain).filter(
+                Domain.asset_id == scan.asset_id,
+                Domain.domain == scan.target_domain,
+            ).first()
+            if domain and domain.scan_status == "scanning":
+                domain.scan_status = "failed"
+        db.commit()
+        return len(interrupted)
+    except Exception:
+        db.rollback()
+        logger.exception("Could not reconcile interrupted scan jobs")
+        return 0
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -26,11 +67,21 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     init_db()
     logger.info("Database initialized")
-    
+    interrupted_count = reconcile_interrupted_scans()
+    if interrupted_count:
+        logger.warning(
+            "Marked %s interrupted scan job(s) as failed after restart",
+            interrupted_count,
+        )
+    schedule_task = asyncio.create_task(scheduler_loop())
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down application")
+    schedule_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await schedule_task
     close_db()
     logger.info("Database connections closed")
 
@@ -122,6 +173,11 @@ async def readiness_check():
 
 # API Routes
 app.include_router(v1_router)
+
+# Real gowitness captures. The API returns these URLs to the frontend.
+import os
+os.makedirs("/app/screenshots", exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory="/app/screenshots"), name="screenshots")
 
 
 # Root endpoint

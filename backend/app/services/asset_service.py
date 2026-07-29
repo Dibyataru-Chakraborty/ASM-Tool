@@ -3,6 +3,7 @@ Asset service for managing reconnaissance targets.
 """
 
 from typing import Optional, List, Dict, Any
+import json
 from sqlalchemy.orm import Session
 from app.models import Asset, Domain
 from app.repositories.asset_repo import AssetRepository
@@ -25,32 +26,46 @@ class AssetService:
         self,
         user_id: str,
         name: str,
-        target: Optional[str] = None,
+        target: str,
         description: Optional[str] = None,
         asset_type: str = "domain",
         tags: Optional[List[str]] = None,
     ) -> Asset:
         """Create a new asset."""
+        # Validate input
         if not name or len(name.strip()) == 0:
             raise ValidationError("Asset name cannot be empty")
+        if not target or len(target.strip()) == 0:
+            raise ValidationError("Asset target cannot be empty")
+        domain_name = self._domain_from_target(target)
+        if asset_type in {"domain", "subdomain", "url", "web_application"} and not domain_name:
+            raise ValidationError("Domain and URL assets require a valid hostname")
 
+        # Check for duplicates
         existing = self.asset_repo.get_by_user_and_name(user_id, name)
         if existing:
             raise ConflictError(f"Asset '{name}' already exists for this user")
 
-        tags_str = ", ".join(tags) if tags else ""
+        # Create asset
         try:
             asset = self.asset_repo.create({
                 "user_id": user_id,
                 "name": name.strip(),
-                "target": (target or name).strip(),
+                "target": target.strip(),
                 "description": description,
                 "asset_type": asset_type,
+                "tags": json.dumps(tags or []),
                 "status": "active",
                 "risk_score": 0,
-                "tags": tags_str,
-                "scan_count": 0,
             })
+            if asset_type in {"domain", "subdomain", "url", "web_application"} and domain_name:
+                self.domain_repo.create({
+                    "asset_id": asset.id,
+                    "domain": domain_name,
+                    "is_active": True,
+                    "is_vulnerable": False,
+                    "scan_status": "not_scanned",
+                })
             logger.info(f"Asset created: {asset.id} for user {user_id}")
             return asset
         except Exception as e:
@@ -85,24 +100,34 @@ class AssetService:
         target: Optional[str] = None,
         description: Optional[str] = None,
         status: Optional[str] = None,
+        asset_type: Optional[str] = None,
         tags: Optional[List[str]] = None,
     ) -> Asset:
         """Update an asset."""
         asset = self.get_asset(asset_id, user_id)
 
         update_data = {}
+        effective_target = target or asset.target or asset.name
+        effective_type = asset_type or asset.asset_type
+        if (
+            effective_type in {"domain", "subdomain", "url", "web_application"}
+            and not self._domain_from_target(effective_target)
+        ):
+            raise ValidationError("Domain and URL assets require a valid hostname")
         if name:
             update_data["name"] = name
-        if target is not None:
-            update_data["target"] = target
+        if target:
+            update_data["target"] = target.strip()
         if description is not None:
             update_data["description"] = description
+        if asset_type:
+            update_data["asset_type"] = asset_type
+        if tags is not None:
+            update_data["tags"] = json.dumps(tags)
         if status:
             if status not in ["active", "archived", "monitoring"]:
                 raise ValidationError("Invalid status value")
             update_data["status"] = status
-        if tags is not None:
-            update_data["tags"] = ", ".join(tags)
 
         if not update_data:
             return asset
@@ -114,6 +139,28 @@ class AssetService:
         except Exception as e:
             logger.error(f"Error updating asset: {str(e)}")
             raise
+
+    @staticmethod
+    def _domain_from_target(target: str) -> Optional[str]:
+        """Return a hostname for domain/URL assets, or None for other targets."""
+        from urllib.parse import urlparse
+
+        value = (target or "").strip().lower()
+        if not value:
+            return None
+        parsed = urlparse(value if "://" in value else f"//{value}")
+        hostname = (parsed.hostname or "").rstrip(".")
+        if not hostname:
+            return None
+        labels = hostname.split(".")
+        if (
+            len(labels) < 2
+            or not labels[-1].isalpha()
+            or len(labels[-1]) < 2
+            or any(not label or len(label) > 63 for label in labels)
+        ):
+            return None
+        return hostname
 
     def delete_asset(self, asset_id: str, user_id: str) -> bool:
         """Delete an asset."""

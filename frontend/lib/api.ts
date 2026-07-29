@@ -33,6 +33,12 @@ export const asm = {
   toggleSchedule:  (id: string) => client.put(`/api/v1/schedules/${id}/toggle`).then(r => r.data),
   pauseSchedule:   (id: string) => client.put(`/api/v1/schedules/${id}/pause`).then(r => r.data),
   deleteSchedule:  (id: string) => client.delete(`/api/v1/schedules/${id}`),
+  previewSchedule: (b: any) => client.post('/api/v1/schedules/preview', b).then(r => r.data),
+  getScheduleMailStatus: () => client.get('/api/v1/schedules/mail/status').then(r => r.data),
+  sendScheduleTestEmail: (recipient?: string) => client.post(
+    '/api/v1/schedules/mail/test',
+    recipient ? { recipient } : {},
+  ).then(r => r.data),
 
   // Scan jobs
   triggerScan:  (asset_id: string) => client.post('/api/v1/scans/trigger', { asset_id }).then(r => r.data),

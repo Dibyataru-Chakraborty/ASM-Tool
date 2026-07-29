@@ -5,6 +5,15 @@ Scan model for tracking scan jobs and execution history.
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Index, Text
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, get_uuid
+from datetime import datetime, timezone
+import uuid
+
+
+def generate_scan_reference() -> str:
+    """Generate a readable, non-sequential public reference for a scan."""
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid.uuid4().hex[:16].upper()
+    return f"SCN-{date_part}-{random_part}"
 
 
 class Scan(Base, TimestampMixin):
@@ -13,6 +22,12 @@ class Scan(Base, TimestampMixin):
     __tablename__ = "scans"
 
     id = Column(String(36), primary_key=True, default=get_uuid)
+    reference_id = Column(
+        String(32),
+        nullable=False,
+        unique=True,
+        default=generate_scan_reference,
+    )
     asset_id = Column(String(36), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
     
     # Scan classification
@@ -55,10 +70,11 @@ class Scan(Base, TimestampMixin):
 
     __table_args__ = (
         Index("idx_scans_asset_id", "asset_id"),
+        Index("idx_scans_reference_id", "reference_id", unique=True),
         Index("idx_scans_status", "status"),
         Index("idx_scans_type", "scan_type"),
         Index("idx_scans_created_at", "created_at"),
     )
 
     def __repr__(self):
-        return f"<Scan(id={self.id}, type={self.scan_type}, status={self.status})>"
+        return f"<Scan(reference_id={self.reference_id}, type={self.scan_type}, status={self.status})>"

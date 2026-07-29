@@ -11,6 +11,7 @@ from app.models.dns_record import DNSRecord
 from app.models.ssl_certificate import SSLCertificate
 from app.models.screenshot import Screenshot
 from app.models.scan import Scan
+from app.models.scan_schedule import ScanSchedule
 
 # Phase 2-3: Port Scanning, Service Detection, Vulnerability
 from app.models.phase2 import Port, Service, Banner, Technology, OSDetection, Vulnerability
@@ -34,6 +35,7 @@ __all__ = [
     "SSLCertificate",
     "Screenshot",
     "Scan",
+    "ScanSchedule",
     # Phase 2-3
     "Port",
     "Service",

@@ -40,7 +40,7 @@ async def create_asset(
             target=request.target,
             description=request.description,
             asset_type=request.asset_type,
-            tags=request.tags or []
+            tags=request.tags or [],
         )
         return AssetResponse.from_orm_asset(asset)
     except (ConflictError, ValidationError) as e:
@@ -63,20 +63,21 @@ async def list_assets(
     try:
         service = AssetService(db)
         assets, total = service.list_active_assets(current_user.id, skip, limit)
-
-        # Apply in-memory search filter if requested
         if search:
-            s = search.lower()
-            assets = [a for a in assets if s in (a.name or '').lower() or s in (a.target or '').lower()]
+            normalized_search = search.lower()
+            assets = [
+                asset for asset in assets
+                if normalized_search in (asset.name or "").lower()
+                or normalized_search in (asset.target or "").lower()
+            ]
             total = len(assets)
-
-        serialized = [AssetResponse.from_orm_asset(a) for a in assets]
+        serialized = [AssetResponse.from_orm_asset(asset) for asset in assets]
         return {
             "total": total,
             "skip": skip,
             "limit": limit,
             "items": serialized,
-            "assets": serialized
+            "assets": serialized,
         }
     except Exception as e:
         logger.error(f"Error listing assets: {str(e)}")
@@ -128,7 +129,8 @@ async def update_asset(
             target=request.target,
             description=request.description,
             status=request.status,
-            tags=request.tags
+            asset_type=request.asset_type,
+            tags=request.tags,
         )
         return AssetResponse.from_orm_asset(asset)
     except NotFoundError as e:
@@ -198,6 +200,52 @@ async def get_asset_stats(
     except Exception as e:
         logger.error(f"Error getting asset stats: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get asset stats")
+
+
+@router.get("/{asset_id}/domains", response_model=list[DomainResponse])
+async def get_asset_domains(
+    asset_id: str,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of domains for an asset."""
+    from app.models import Domain, Asset
+
+    asset = db.query(Asset).filter(Asset.id == asset_id, Asset.user_id == current_user.id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    domains = db.query(Domain).filter(Domain.asset_id == asset_id).all()
+
+    # Auto-initialize domain if the asset itself is a domain and none exist
+    if not domains and asset.asset_type == "domain":
+        from app.services.discovery_service import DiscoveryService
+        discovery_service = DiscoveryService(db)
+        if discovery_service._is_valid_domain(asset.name):
+            try:
+                discovery_service.create_domain(asset.id, asset.name)
+                domains = db.query(Domain).filter(Domain.asset_id == asset_id).all()
+            except Exception as e:
+                logger.error(f"Failed to auto-initialize domain for asset: {str(e)}")
+
+    result = []
+    for d in domains:
+        # Count subdomains
+        from app.models import Subdomain
+        sub_count = db.query(Subdomain).filter(Subdomain.domain_id == d.id).count()
+
+        result.append({
+            "id": d.id,
+            "domain": d.domain,
+            "tld": d.tld,
+            "registrar": d.registrar,
+            "expiration_date": d.expiration_date,
+            "is_vulnerable": d.is_vulnerable,
+            "last_scanned": d.last_scanned,
+            "subdomain_count": sub_count,
+            "created_at": d.created_at
+        })
+    return result
 
 
 @router.get("/{asset_id}/subdomains")

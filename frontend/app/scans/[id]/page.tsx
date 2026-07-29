@@ -1,280 +1,266 @@
 'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  Radar,
+  Search,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react'
+
 import AppLayout from '@/components/layout/AppLayout'
 import { AuthProvider } from '@/lib/auth'
-import { useState, useEffect, useRef, use } from 'react'
-import Link from 'next/link'
 import asm from '@/lib/api'
 
-const TOOL_ICONS: Record<string,string> = {
-  subfinder:'🌐',dnsx:'🔍',httpx:'🌍',naabu:'🚪',nmap:'🗺️',
-  katana:'🕷️',dirsearch:'📁',nuclei:'⚡',xsstrike:'💉',gowitness:'📸'
-}
-const STATUS_STYLE: Record<string,{icon:string;cls:string}> = {
-  completed:  {icon:'✅',cls:'text-green-400'},
-  running:    {icon:'🔄',cls:'text-blue-400 animate-pulse'},
-  failed:     {icon:'❌',cls:'text-red-400'},
-  skipped:    {icon:'⏭',cls:'text-gray-500'},
-  pending:    {icon:'⏳',cls:'text-gray-600'},
-}
-const SEV_CLS: Record<string,string> = {
-  critical:'tag-crit',high:'tag-high',medium:'tag-med',low:'tag-low',info:'tag-info'
+type ScanJob = {
+  id: string
+  reference_id?: string | null
+  asset_id: string
+  scan_type: string
+  status: string
+  target_domain?: string | null
+  retry_count?: number
+  started_at?: string | null
+  completed_at?: string | null
+  discovered_count?: number
+  vulnerable_count?: number
+  error_message?: string | null
+  created_at: string
+  updated_at: string
 }
 
-function ScanDetailPageInner({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
-  const [job, setJob]       = useState<any>(null)
-  const [tools, setTools]   = useState<any[]>([])
-  const [logs, setLogs]     = useState<any[]>([])
-  const [vulns, setVulns]   = useState<any[]>([])
-  const [tab, setTab]       = useState<'progress'|'logs'|'vulns'|'raw'>('progress')
-  const [activeTool, setActiveTool] = useState<string|null>(null)
-  const lastLogId = useRef<string|null>(null)
-  const logsRef = useRef<HTMLDivElement>(null)
+const ACTIVE_STATUSES = new Set(['pending', 'queued', 'running'])
 
-  const loadJob = async () => {
-    const [j, t] = await Promise.all([asm.getScan(id), asm.getScanTools(id)])
-    setJob(j)
-    setTools(t.tools || [])
-  }
+function asDate(value?: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
 
-  const loadLogs = async () => {
-    const r = await asm.getScanLogs(id, lastLogId.current || undefined)
-    if (r.logs?.length) {
-      setLogs(prev => [...prev, ...r.logs])
-      lastLogId.current = r.logs[r.logs.length - 1].id
-      setTimeout(() => logsRef.current?.scrollTo(0, logsRef.current.scrollHeight), 50)
+function formatDate(value?: string | null) {
+  const date = asDate(value)
+  return date ? date.toLocaleString() : '—'
+}
+
+function formatDuration(start?: string | null, end?: string | null) {
+  const startedAt = asDate(start)
+  if (!startedAt) return '—'
+
+  const endedAt = asDate(end)
+  if (!endedAt) return 'In progress'
+
+  const seconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return minutes ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`
+}
+
+function StatusIcon({ status }: { status: string }) {
+  if (status === 'running') return <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+  if (status === 'completed') return <CheckCircle2 className="h-4 w-4 text-green-400" />
+  if (status === 'failed') return <XCircle className="h-4 w-4 text-red-400" />
+  if (status === 'cancelled') return <XCircle className="h-4 w-4 text-gray-500" />
+  return <Clock3 className="h-4 w-4 text-yellow-400" />
+}
+
+function statusClasses(status: string) {
+  if (status === 'running') return 'border-blue-500/30 bg-blue-500/10 text-blue-400'
+  if (status === 'completed') return 'border-green-500/30 bg-green-500/10 text-green-400'
+  if (status === 'failed') return 'border-red-500/30 bg-red-500/10 text-red-400'
+  if (status === 'cancelled') return 'border-gray-500/30 bg-gray-500/10 text-gray-400'
+  return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'
+}
+
+function ScanDetailPageInner({ params }: { params: { id: string } }) {
+  const { id } = params
+  const [scan, setScan] = useState<ScanJob | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadScan = useCallback(async () => {
+    try {
+      const response = await asm.getScan(id)
+      setScan(response)
+      setError('')
+    } catch (requestError: any) {
+      const detail = requestError?.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Unable to load this scan.')
+    } finally {
+      setLoading(false)
     }
-  }
-
-  const loadVulns = async () => {
-    const r = await asm.getVulns({ scan_job_id: id, limit: 100 })
-    setVulns(r.vulnerabilities || [])
-  }
+  }, [id])
 
   useEffect(() => {
-    loadJob(); loadLogs(); loadVulns()
-    const t = setInterval(() => {
-      loadJob(); loadLogs()
-      if (tab === 'vulns') loadVulns()
-    }, 3000)
-    return () => clearInterval(t)
-  }, [id, tab])
+    loadScan()
+  }, [loadScan])
 
-  if (!job) return <div className="flex items-center justify-center h-64"><div className="animate-spin text-4xl">🔭</div></div>
+  useEffect(() => {
+    if (!scan || !ACTIVE_STATUSES.has(String(scan.status).toLowerCase())) return
+    const timer = window.setInterval(loadScan, 3000)
+    return () => window.clearInterval(timer)
+  }, [scan?.status, loadScan])
 
-  const isActive = ['running','queued'].includes(job.status)
-  const sevCounts = { critical:0, high:0, medium:0, low:0 }
-  vulns.forEach(v => { sevCounts[v.severity as keyof typeof sevCounts] = (sevCounts[v.severity as keyof typeof sevCounts]||0)+1 })
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-9 w-9 animate-spin text-blue-400" aria-label="Loading scan" />
+      </div>
+    )
+  }
+
+  if (error || !scan) {
+    return (
+      <div className="card mx-auto mt-16 max-w-lg p-8 text-center">
+        <AlertCircle className="mx-auto mb-3 h-10 w-10 text-red-400" />
+        <h1 className="text-base font-semibold text-gray-100">Scan details unavailable</h1>
+        <p className="mt-2 text-sm text-gray-500">{error || 'This scan could not be found.'}</p>
+        <Link href="/scans" className="btn-blue mt-5 inline-flex items-center gap-2 text-xs">
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to Scan History
+        </Link>
+      </div>
+    )
+  }
+
+  const status = String(scan.status || 'pending').toLowerCase()
+  const isActive = ACTIVE_STATUSES.has(status)
+  const title = scan.target_domain || scan.reference_id || scan.id
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Link href="/scans" className="text-gray-600 hover:text-gray-300 text-sm">← Scans</Link>
-        <span className="text-gray-700">/</span>
-        <h1 className="text-base font-bold text-gray-100">{job.asset_target}</h1>
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
-          job.status==='running'?'text-blue-400 bg-blue-500/10 border-blue-500/20 animate-pulse':
-          job.status==='completed'?'text-green-400 bg-green-500/10 border-green-500/20':
-          job.status==='failed'?'text-red-400 bg-red-500/10 border-red-500/20':
-          'text-gray-400 bg-gray-500/10 border-gray-500/20'
-        }`}>
-          {job.status}
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <Link href="/scans" className="mb-2 inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-400">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Scan History
+          </Link>
+          <h1 className="break-all text-xl font-bold text-gray-100">{title}</h1>
+          <p className="mt-1 font-mono text-xs text-blue-400">
+            {scan.reference_id || scan.id}
+          </p>
+        </div>
+
+        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${statusClasses(status)}`}>
+          <StatusIcon status={status} />
+          {status === 'pending' ? 'queued' : status}
         </span>
       </div>
 
-      {/* Overview cards */}
-      <div className="grid grid-cols-4 gap-3">
-        <div className="card p-3">
-          <p className="text-xs text-gray-500 mb-0.5">Progress</p>
-          <div className="flex items-end gap-2">
-            <p className="text-xl font-bold text-gray-100">{job.progress||0}%</p>
-            {isActive && <div className="w-2 h-2 rounded-full bg-blue-400 animate-ping mb-1" />}
-          </div>
-          <div className="mt-1 h-1 bg-[#21262d] rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 transition-all duration-700" style={{width:`${job.progress||0}%`}} />
-          </div>
-        </div>
-        <div className="card p-3">
-          <p className="text-xs text-gray-500 mb-0.5">Current Tool</p>
-          <p className="text-sm font-bold text-gray-100">
-            {job.current_tool ? `${TOOL_ICONS[job.current_tool]||'🔧'} ${job.current_tool}` : '—'}
-          </p>
-        </div>
-        <div className="card p-3">
-          <p className="text-xs text-gray-500 mb-0.5">Vulnerabilities</p>
-          <div className="flex gap-2">
-            {Object.entries(sevCounts).map(([s,c])=>c>0 && (
-              <span key={s} className={`text-xs font-bold ${SEV_CLS[s]}`}>{c} {s[0].toUpperCase()}</span>
-            ))}
-            {vulns.length===0 && <p className="text-gray-600 text-xs">None yet</p>}
-          </div>
-        </div>
-        <div className="card p-3">
-          <p className="text-xs text-gray-500 mb-0.5">Duration</p>
-          <p className="text-sm font-bold text-gray-100">
-            {job.duration_seconds ? `${Math.floor(job.duration_seconds/60)}m ${job.duration_seconds%60}s` : isActive ? 'Running…' : '—'}
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-[#21262d] pb-2">
-        {[
-          {id:'progress',label:'🔧 Tools'},
-          {id:'logs',    label:`📋 Live Logs (${logs.length})`},
-          {id:'vulns',   label:`🐛 Findings (${vulns.length})`},
-          {id:'raw',     label:'📄 Raw Output'},
-        ].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id as any)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab===t.id?'bg-blue-600 text-white':'text-gray-500 hover:text-gray-300 hover:bg-[#21262d]'}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tools tab */}
-      {tab==='progress' && (
-        <div className="space-y-2">
-          {tools.length===0 ? (
-            <div className="card p-6 text-center text-gray-600 text-sm">Tools starting…</div>
-          ) : tools.map((t:any)=>{
-            const st = STATUS_STYLE[t.status] || STATUS_STYLE.pending
-            const isSelected = activeTool === t.id
-            return (
-              <div key={t.id} className="card overflow-hidden">
-                <button onClick={()=>setActiveTool(isSelected?null:t.id)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#1c2128] transition text-left">
-                  <span className="text-lg shrink-0">{TOOL_ICONS[t.tool_name]||'🔧'}</span>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold text-gray-200">{t.tool_name}</span>
-                      <span className={`text-xs ${st.cls}`}>{st.icon} {t.status}</span>
-                      {t.result_count > 0 && (
-                        <span className="text-xs text-gray-500 bg-[#0d1117] border border-[#30363d] px-1.5 py-0.5 rounded">{t.result_count} results</span>
-                      )}
-                    </div>
-                    {t.status === 'running' && (
-                      <div className="mt-1 h-0.5 bg-[#21262d] rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 animate-pulse w-1/2" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right text-xs text-gray-600 shrink-0">
-                    {t.duration_seconds ? `${t.duration_seconds}s` : ''}
-                  </div>
-                  <span className="text-gray-600 text-xs ml-1">{isSelected?'▲':'▼'}</span>
-                </button>
-                {isSelected && (
-                  <div className="border-t border-[#21262d] px-4 py-3 space-y-2 bg-[#0d1117]">
-                    {t.command && (
-                      <div>
-                        <p className="text-[10px] text-gray-500 mb-0.5">Command</p>
-                        <code className="text-xs text-gray-400 font-mono">{t.command}</code>
-                      </div>
-                    )}
-                    {t.error_message && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2">
-                        <p className="text-xs text-red-400">{t.error_message}</p>
-                      </div>
-                    )}
-                    {t.raw_output_preview && (
-                      <div>
-                        <p className="text-[10px] text-gray-500 mb-0.5">Output preview</p>
-                        <pre className="text-[10px] text-gray-400 font-mono whitespace-pre-wrap overflow-auto max-h-40 bg-[#161b22] border border-[#21262d] rounded p-2">{t.raw_output_preview}</pre>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Logs tab */}
-      {tab==='logs' && (
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#21262d]">
-            <span className="text-xs text-gray-500">Live execution logs</span>
-            {isActive && <span className="text-xs text-blue-400 animate-pulse">● Live</span>}
-          </div>
-          <div ref={logsRef} className="h-96 overflow-y-auto p-3 space-y-0.5 font-mono text-xs">
-            {logs.length === 0 ? (
-              <p className="text-gray-600 p-2">No logs yet…</p>
-            ) : logs.map((l:any)=>(
-              <div key={l.id} className={`flex gap-2 ${l.level==='error'?'text-red-400':l.level==='warn'?'text-yellow-400':'text-gray-400'}`}>
-                <span className="text-gray-600 shrink-0">{new Date(l.logged_at).toLocaleTimeString()}</span>
-                {l.tool && <span className="text-blue-400 shrink-0">[{l.tool}]</span>}
-                <span>{l.message}</span>
-              </div>
-            ))}
+      {scan.error_message && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <div>
+            <p className="text-xs font-semibold text-red-300">Scan failed</p>
+            <p className="mt-1 whitespace-pre-wrap text-xs text-red-200/80">{scan.error_message}</p>
           </div>
         </div>
       )}
 
-      {/* Vulns tab */}
-      {tab==='vulns' && (
-        <div className="card overflow-hidden">
-          {vulns.length===0 ? (
-            <div className="py-10 text-center text-gray-600 text-sm">No findings yet — scan in progress</div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Scan type</p>
+            <Radar className="h-4 w-4 text-blue-400" />
+          </div>
+          <p className="text-lg font-bold capitalize text-gray-100">
+            {(scan.scan_type || 'scan').replace(/_/g, ' ')}
+          </p>
+        </div>
+
+        <div className="card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Discoveries</p>
+            <Search className="h-4 w-4 text-cyan-400" />
+          </div>
+          <p className="text-2xl font-bold text-gray-100">{scan.discovered_count ?? 0}</p>
+        </div>
+
+        <div className="card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Findings</p>
+            <ShieldAlert className="h-4 w-4 text-orange-400" />
+          </div>
+          <p className="text-2xl font-bold text-gray-100">{scan.vulnerable_count ?? 0}</p>
+        </div>
+
+        <div className="card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Duration</p>
+            <Clock3 className="h-4 w-4 text-purple-400" />
+          </div>
+          <p className="text-lg font-bold text-gray-100">
+            {formatDuration(scan.started_at, scan.completed_at)}
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-100">Execution status</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {isActive
+                ? 'This page refreshes every 3 seconds while the real scan is active.'
+                : `The scan is ${status}.`}
+            </p>
+          </div>
+          <StatusIcon status={status} />
+        </div>
+
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#21262d]">
+          {status === 'running' ? (
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
           ) : (
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-[#21262d]">
-                {['Title','Severity','CVSS','Host/URL','Tool','CVE'].map(h=>(
-                  <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium uppercase tracking-wide">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {vulns.map((v:any)=>(
-                  <tr key={v.id} className="border-b border-[#21262d] hover:bg-[#1c2128] transition">
-                    <td className="px-4 py-2.5 max-w-xs">
-                      <Link href={`/vulnerabilities/${v.id}`} className="text-gray-200 hover:text-blue-400 truncate block">{v.title}</Link>
-                    </td>
-                    <td className="px-4 py-2.5"><span className={SEV_CLS[v.severity]||'tag-info'}>{v.severity}</span></td>
-                    <td className="px-4 py-2.5">
-                      <span className={`font-bold ${(v.cvss_score||0)>=9?'text-red-400':(v.cvss_score||0)>=7?'text-orange-400':(v.cvss_score||0)>=4?'text-yellow-400':'text-blue-400'}`}>
-                        {v.cvss_score?.toFixed(1)||'—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-gray-400 truncate max-w-xs">{v.host||v.url||'—'}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{v.source_tool||'—'}</td>
-                    <td className="px-4 py-2.5 text-blue-400 font-mono">{v.cve_id||'—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div
+              className={`h-full rounded-full ${
+                status === 'completed'
+                  ? 'w-full bg-green-500'
+                  : status === 'failed'
+                    ? 'w-full bg-red-500'
+                    : status === 'cancelled'
+                      ? 'w-full bg-gray-600'
+                      : 'w-1/12 bg-yellow-500'
+              }`}
+            />
           )}
         </div>
-      )}
+      </div>
 
-      {/* Raw output tab */}
-      {tab==='raw' && (
-        <div className="card overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-[#21262d]">
-            <div className="flex gap-2 overflow-x-auto">
-              {tools.filter(t=>t.raw_output_preview).map((t:any)=>(
-                <button key={t.id} onClick={()=>setActiveTool(activeTool===t.id?null:t.id)}
-                  className={`shrink-0 px-3 py-1 rounded-lg text-xs transition ${activeTool===t.id?'bg-blue-600 text-white':'btn-gray'}`}>
-                  {TOOL_ICONS[t.tool_name]||'🔧'} {t.tool_name}
-                </button>
-              ))}
+      <div className="card overflow-hidden">
+        <div className="border-b border-[#21262d] px-5 py-4">
+          <h2 className="text-sm font-semibold text-gray-100">Scan record</h2>
+          <p className="mt-1 text-xs text-gray-500">Values below come directly from the saved scan record.</p>
+        </div>
+
+        <dl className="grid sm:grid-cols-2">
+          {[
+            ['Scan ID', scan.id],
+            ['Reference', scan.reference_id || '—'],
+            ['Asset ID', scan.asset_id],
+            ['Target', scan.target_domain || '—'],
+            ['Created', formatDate(scan.created_at)],
+            ['Started', formatDate(scan.started_at)],
+            ['Completed', formatDate(scan.completed_at)],
+            ['Last updated', formatDate(scan.updated_at)],
+          ].map(([label, value]) => (
+            <div key={label} className="border-b border-[#21262d] px-5 py-4 even:sm:border-l">
+              <dt className="text-[10px] uppercase tracking-wide text-gray-600">{label}</dt>
+              <dd className="mt-1 break-all font-mono text-xs text-gray-300">{value}</dd>
             </div>
-          </div>
-          {activeTool ? (
-            <pre className="p-4 text-xs text-gray-400 font-mono whitespace-pre-wrap overflow-auto max-h-[500px] leading-relaxed">
-              {tools.find(t=>t.id===activeTool)?.raw_output_preview || 'No output'}
-            </pre>
-          ) : (
-            <p className="p-4 text-xs text-gray-600">Select a tool above to view its output</p>
-          )}
-        </div>
-      )}
+          ))}
+        </dl>
+      </div>
     </div>
   )
 }
 
-export default function ScanDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ScanDetailPage({ params }: { params: { id: string } }) {
   return (
     <AuthProvider>
       <AppLayout>

@@ -4,13 +4,14 @@ import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
 import { AuthProvider } from '@/lib/auth'
 import asm from '@/lib/api'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 
 const STATUS_CLS: Record<string,string> = {
-  running:'text-blue-400',queued:'text-yellow-400',completed:'text-green-400',
+  running:'text-blue-400',pending:'text-yellow-400',queued:'text-yellow-400',completed:'text-green-400',
   failed:'text-red-400',cancelled:'text-gray-500',paused:'text-orange-400'
 }
 const STATUS_DOT: Record<string,string> = {
-  running:'bg-blue-400 animate-pulse',queued:'bg-yellow-400',completed:'bg-green-400',
+  running:'bg-blue-400 animate-pulse',pending:'bg-yellow-400',queued:'bg-yellow-400',completed:'bg-green-400',
   failed:'bg-red-400',cancelled:'bg-gray-600',paused:'bg-orange-400'
 }
 
@@ -23,11 +24,32 @@ export default function ScansPage() {
 
   const load = async () => {
     const p: any = {}
-    if (filter) p.status = filter
     if (assetFilter) p.asset_id = assetFilter
     const [s, a] = await Promise.all([asm.getScans(p), asm.getAssets()])
-    setScans(s.scans || [])
-    setAssets(a.assets || [])
+    const assetRows = a.assets || []
+    const assetById = new Map(assetRows.map((asset: any) => [asset.id, asset]))
+    const scanRows = (s.items || s.scans || []).map((scan: any) => {
+      const asset: any = assetById.get(scan.asset_id)
+      const status = scan.status === 'pending' ? 'queued' : scan.status
+      const startedAt = scan.started_at ? new Date(scan.started_at).getTime() : 0
+      const completedAt = scan.completed_at ? new Date(scan.completed_at).getTime() : 0
+
+      return {
+        ...scan,
+        status,
+        asset_target: scan.asset_target || asset?.target || asset?.name || scan.asset_id,
+        triggered_by: scan.triggered_by || 'manual',
+        progress: typeof scan.progress === 'number'
+          ? scan.progress
+          : status === 'completed' ? 100 : 0,
+        duration_seconds: scan.duration_seconds || (
+          startedAt && completedAt ? Math.max(0, Math.round((completedAt - startedAt) / 1000)) : null
+        ),
+      }
+    })
+
+    setScans(filter ? scanRows.filter((scan: any) => scan.status === filter) : scanRows)
+    setAssets(assetRows)
     setLoading(false)
   }
 
@@ -80,15 +102,30 @@ export default function ScansPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[j.status]||'bg-gray-600'}`} />
+                      {j.status === 'running' ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-400" aria-label="Scan running" />
+                      ) : j.status === 'completed' ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-400" aria-label="Scan completed" />
+                      ) : (
+                        <span className={`h-2 w-2 rounded-full ${STATUS_DOT[j.status]||'bg-gray-600'}`} />
+                      )}
                       <span className={STATUS_CLS[j.status]||'text-gray-400'}>{j.status}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 w-32">
                     <div className="h-1.5 bg-[#21262d] rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 transition-all duration-500 rounded-full" style={{width:`${j.progress||0}%`}} />
+                      {j.status === 'running' ? (
+                        <div
+                          className="h-full animate-pulse rounded-full bg-blue-500 transition-all duration-500"
+                          style={{ width: `${Math.max(4, Math.min(100, j.progress || 0))}%` }}
+                        />
+                      ) : (
+                        <div className="h-full bg-blue-500 transition-all duration-500 rounded-full" style={{width:`${j.progress||0}%`}} />
+                      )}
                     </div>
-                    <p className="text-gray-600 mt-0.5">{j.progress||0}%</p>
+                    <p className="text-gray-600 mt-0.5">
+                      {j.status === 'running' ? `${j.progress || 0}%` : j.status === 'queued' ? 'Waiting' : `${j.progress||0}%`}
+                    </p>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-gray-400">{j.current_tool || '—'}</span>

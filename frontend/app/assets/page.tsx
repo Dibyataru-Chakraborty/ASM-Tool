@@ -95,8 +95,35 @@ export default function AssetsPage() {
     setScanning(id)
     try {
       const r = await asm.triggerScan(id)
-      setMsg(`✅ Scan queued: ${r.scan_job_id}`)
-      setTimeout(()=>setMsg(''),4000)
+      const scanId = r.scan_job_id
+      setMsg(`⏳ Scan accepted and starting: ${scanId}`)
+
+      void (async () => {
+        for (let attempt = 0; attempt < 15; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          try {
+            const job = await asm.getScan(scanId)
+            if (job.status === 'running') {
+              setMsg(`🔄 Scan is running: ${scanId}`)
+              setTimeout(()=>setMsg(''),5000)
+              return
+            }
+            if (job.status === 'completed') {
+              setMsg(`✅ Scan completed: ${scanId}`)
+              setTimeout(()=>setMsg(''),5000)
+              return
+            }
+            if (job.status === 'failed') {
+              setMsg(`❌ Scan failed: ${job.error_message || scanId}`)
+              return
+            }
+          } catch {
+            // The list page continues polling even if this short watcher misses a request.
+          }
+        }
+        setMsg(`⏳ Scan is still queued: ${scanId}`)
+        setTimeout(()=>setMsg(''),5000)
+      })()
     } catch(e:any) { setMsg(`❌ ${e.response?.data?.detail||'Failed'}`) }
     setScanning(null)
   }

@@ -2,7 +2,7 @@
 Asset model representing an organization/target for reconnaissance.
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index, DateTime
+from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, get_uuid
 
@@ -17,12 +17,8 @@ class Asset(Base, TimestampMixin):
 
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-
-    # The actual target value (domain, IP, CIDR, URL) to scan
     target = Column(String(512), nullable=True, index=True)
-
-    # Comma-separated tags for filtering/grouping
-    tags = Column(Text, nullable=True, default="")
+    tags = Column(Text, nullable=True, default="[]")
 
     # Asset classification
     asset_type = Column(
@@ -42,8 +38,6 @@ class Asset(Base, TimestampMixin):
 
     # Risk scoring
     risk_score = Column(Integer, default=0, index=True)
-
-    # Scan tracking
     scan_count = Column(Integer, default=0)
     last_scanned_at = Column(DateTime(timezone=True), nullable=True)
 

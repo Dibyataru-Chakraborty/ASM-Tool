@@ -5,7 +5,7 @@ Scans API routes for reconnaissance job management.
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
-from app.services.discovery_service import DiscoveryService
+from app.services.discovery_service import DiscoveryService, get_live_scan_state
 from app.repositories.scan_repo import ScanRepository
 from app.exceptions import NotFoundError, ValidationError
 from app.api.v1.scans.schemas import (
@@ -22,6 +22,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scans", tags=["scans"])
+
+
+def _scan_payload(scan) -> dict:
+    """Add factual in-process progress to the persisted scan record."""
+    payload = {
+        column.name: getattr(scan, column.name)
+        for column in scan.__table__.columns
+    }
+    live_state = get_live_scan_state(scan.id)
+    payload["current_tool"] = live_state.get("current_tool")
+    payload["progress"] = live_state.get(
+        "progress",
+        100 if scan.status == "completed" else 0,
+    )
+    return payload
 
 
 @router.post("/trigger", status_code=status.HTTP_202_ACCEPTED)
@@ -43,16 +58,24 @@ async def trigger_scan(
 
         service = DiscoveryService(db)
 
-        # Resolve target: use asset.target (saved from the form), fallback to asset.name
-        target_value = (asset.target or asset.name or "").strip()
+        # Resolve the real hostname stored on the owned asset.
+        from app.services.asset_service import AssetService
+        target_value = AssetService._domain_from_target(asset.target or asset.name)
+        if not target_value:
+            raise HTTPException(
+                status_code=422,
+                detail="This scan requires a domain or URL asset with a valid hostname",
+            )
 
         # Find or create a domain entry for this target
-        existing_domain = db.query(Domain).filter(Domain.asset_id == asset.id).first()
+        existing_domain = db.query(Domain).filter(
+            Domain.asset_id == asset.id,
+            Domain.domain == target_value,
+        ).first()
         if existing_domain:
             domain_id = existing_domain.id
         else:
-            domain_name = target_value if service._is_valid_domain(target_value) else "target.local"
-            domain = service.create_domain(asset.id, domain_name)
+            domain = service.create_domain(asset.id, target_value)
             domain_id = domain.id
 
         scan = service.initiate_scan(
@@ -80,6 +103,14 @@ async def initiate_domain_discovery(
 ):
     """Initiate domain discovery scan."""
     try:
+        from app.models import Asset
+        asset = db.query(Asset).filter(
+            Asset.id == request.asset_id,
+            Asset.user_id == current_user.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
         service = DiscoveryService(db)
         
         # Create or get domain
@@ -92,7 +123,7 @@ async def initiate_domain_discovery(
             scan_type="discovery"
         )
 
-        # Trigger the simulated scan in background
+        # Trigger the real scanner in background
         background_tasks.add_task(service.run_scan_simulation, scan.id, domain.id)
 
         return {
@@ -103,6 +134,8 @@ async def initiate_domain_discovery(
             "status": "pending",
             "created_at": scan.created_at,
         }
+    except HTTPException:
+        raise
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.message)
     except Exception as e:
@@ -119,6 +152,14 @@ async def initiate_scan(
 ):
     """Initiate a scan job."""
     try:
+        from app.models import Asset, Domain
+        asset = db.query(Asset).filter(
+            Asset.id == request.asset_id,
+            Asset.user_id == current_user.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
         service = DiscoveryService(db)
         
         # Resolve domain_id from target_domain if domain_id is not provided
@@ -129,18 +170,17 @@ async def initiate_scan(
                 domain = service.create_domain(request.asset_id, request.target_domain)
                 domain_id = domain.id
             else:
-                # Fallback to the first domain of this asset
-                from app.models import Domain
+                # Fall back to the selected asset's saved, valid target.
                 first_domain = db.query(Domain).filter(Domain.asset_id == request.asset_id).first()
                 if first_domain:
                     domain_id = first_domain.id
                 else:
-                    # Create a default placeholder domain based on asset name
-                    from app.models import Asset
-                    asset = db.query(Asset).filter(Asset.id == request.asset_id).first()
-                    domain_name = asset.name if asset else "target.local"
-                    if not service._is_valid_domain(domain_name):
-                        domain_name = "target.local"
+                    from app.services.asset_service import AssetService
+                    domain_name = AssetService._domain_from_target(asset.target or asset.name)
+                    if not domain_name:
+                        raise ValidationError(
+                            "This scan requires a domain or URL asset with a valid hostname"
+                        )
                     domain = service.create_domain(request.asset_id, domain_name)
                     domain_id = domain.id
         
@@ -150,10 +190,12 @@ async def initiate_scan(
             scan_type=request.scan_type
         )
 
-        # Trigger the simulated scan in background
+        # Trigger the real scanner in background
         background_tasks.add_task(service.run_scan_simulation, scan.id, domain_id)
 
         return scan
+    except HTTPException:
+        raise
     except (NotFoundError, ValidationError) as e:
         status_code = 404 if isinstance(e, NotFoundError) else 422
         raise HTTPException(status_code=status_code, detail=e.message)
@@ -174,6 +216,13 @@ async def list_scans(
     try:
         scan_repo = ScanRepository(db)
         if asset_id:
+            from app.models import Asset
+            owned_asset = db.query(Asset).filter(
+                Asset.id == asset_id,
+                Asset.user_id == current_user.id,
+            ).first()
+            if not owned_asset:
+                raise HTTPException(status_code=404, detail="Asset not found")
             scans, total = scan_repo.get_by_asset_id(asset_id, skip, limit)
         else:
             # Return all scans belonging to the current user's assets
@@ -186,7 +235,7 @@ async def list_scans(
             "total": total,
             "skip": skip,
             "limit": limit,
-            "items": scans
+            "items": [_scan_payload(scan) for scan in scans]
         }
     except Exception as e:
         logger.error(f"Error listing scans: {str(e)}")
@@ -201,13 +250,16 @@ async def get_scan(
 ):
     """Get scan details."""
     try:
-        scan_repo = ScanRepository(db)
-        scan = scan_repo.get_by_id(scan_id)
+        from app.models import Asset, Scan
+        scan = db.query(Scan).join(Asset).filter(
+            Scan.id == scan_id,
+            Asset.user_id == current_user.id,
+        ).first()
         
         if not scan:
             raise NotFoundError("Scan")
         
-        return scan
+        return _scan_payload(scan)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     except Exception as e:
@@ -223,8 +275,12 @@ async def cancel_scan(
 ):
     """Cancel a pending or running scan."""
     try:
+        from app.models import Asset, Scan
         scan_repo = ScanRepository(db)
-        scan = scan_repo.get_by_id(scan_id)
+        scan = db.query(Scan).join(Asset).filter(
+            Scan.id == scan_id,
+            Asset.user_id == current_user.id,
+        ).first()
         
         if not scan:
             raise NotFoundError("Scan")

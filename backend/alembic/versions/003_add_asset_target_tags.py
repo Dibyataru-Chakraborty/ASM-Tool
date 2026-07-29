@@ -1,7 +1,7 @@
 """Add target, tags, scan_count, last_scanned_at to assets
 
 Revision ID: 003_add_asset_target_tags
-Revises: 5d2055aa8cfd
+Revises: 006_scan_reference
 Create Date: 2026-07-27
 
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '003_add_asset_target_tags'
-down_revision = '5d2055aa8cfd'
+down_revision = '006_scan_reference'
 branch_labels = None
 depends_on = None
 

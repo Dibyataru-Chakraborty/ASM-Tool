@@ -1,25 +1,3 @@
-FROM golang:alpine AS go-builder
-
-# Install build dependencies
-RUN apk add --no-cache git libpcap-dev gcc musl-dev
-
-# Install ProjectDiscovery tools (compiled to /go/bin/)
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/asnmap/cmd/asnmap@latest && \
-    go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest && \
-    go install -v github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest && \
-    go install -v github.com/projectdiscovery/notify/cmd/notify@latest && \
-    go install -v github.com/projectdiscovery/proxify/cmd/proxify@latest && \
-    go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest && \
-    go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
-
-# Stage 2: Final runtime Python image
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -28,18 +6,18 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PATH=$PATH:/usr/local/pd_tools \
+    PATH=/usr/local/pd_tools:$PATH \
     PYTHONPATH=/app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     gcc \
+    ca-certificates \
+    chromium \
+    nmap \
     postgresql-client \
     libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Copy compiled Go tools from builder
-COPY --from=go-builder /go/bin/* /usr/local/bin/
 
 # Copy requirements
 COPY requirements.txt .
@@ -52,7 +30,10 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY . .
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /home/appuser/nuclei-templates \
+    && touch /home/appuser/nuclei-templates/.volume-owner \
+    && chown -R appuser:appuser /app /home/appuser/nuclei-templates
 USER appuser
 
 # Health check

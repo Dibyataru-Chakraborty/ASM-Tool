@@ -18,13 +18,31 @@ function ReportsPageInner() {
   const [assets,  setAssets]  = useState<any[]>([])
   const [active,  setActive]  = useState<string>('all')
   const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
 
   const load = async () => {
     setLoading(true)
-    const [r, a] = await Promise.all([asm.getReports(), asm.getAssets()])
-    setReports(r.reports || [])
-    setAssets(a.assets  || [])
-    setLoading(false)
+    setError('')
+    try {
+      const [reportResult, assetResult] = await Promise.allSettled([
+        asm.getReports(),
+        asm.getAssets({ limit: 100 }),
+      ])
+      if (reportResult.status === 'fulfilled') {
+        setReports(reportResult.value.reports || [])
+      } else {
+        setError(reportResult.reason?.response?.data?.detail || 'Failed to load reports')
+      }
+      if (assetResult.status === 'fulfilled') {
+        setAssets(assetResult.value.items || assetResult.value.assets || [])
+      } else {
+        setError(current => current || (
+          assetResult.reason?.response?.data?.detail || 'Failed to load assets'
+        ))
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -49,6 +67,12 @@ function ReportsPageInner() {
         </div>
         <button onClick={load} className="btn-gray text-xs">🔄 Refresh</button>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+          {error}
+        </div>
+      )}
 
       {/* Asset tabs */}
       {assets.length > 0 && (

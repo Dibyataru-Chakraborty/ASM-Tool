@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   postgres:
@@ -50,6 +48,7 @@ services:
       - ./backend:/app
       - screenshots:/app/screenshots
       - pd_tools:/usr/local/pd_tools
+      - nuclei_templates:/home/appuser/nuclei-templates
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,7 +56,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks:
       - asm_network
 

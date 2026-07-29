@@ -38,6 +38,7 @@ requests==2.33.0                  # was: 2.32.4 (too low for virustotal)
 
 # ── Config ───────────────────────────────────────────────────────
 python-dotenv==1.2.2
+tzdata==2026.3                    # IANA timezones for persistent scan schedules
 
 # ── Logging & Monitoring ─────────────────────────────────────────
 structlog==26.1.0

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import { Loader2 } from 'lucide-react'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -16,7 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading) return (
     <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
-        <div className="text-4xl animate-spin">🛡️</div>
+        <Loader2 className="h-9 w-9 animate-spin text-blue-400" aria-label="Loading" />
         <p className="text-sm text-gray-500">Loading…</p>
       </div>
     </div>

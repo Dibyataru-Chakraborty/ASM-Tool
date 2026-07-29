@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://redis:6379/2"
     celery_task_timeout: int = 3600  # 1 hour
 
+    # Persistent scan scheduler
+    scheduler_poll_seconds: int = 15
+    max_concurrent_scans: int = 5
+
     # Rate Limiting
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 100  # requests per window
@@ -102,6 +106,18 @@ class Settings(BaseSettings):
     
     # Azure Teams (Phase 6)
     azure_webhook_url: Optional[str] = None
+
+    # SMTP email notifications
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_require_auth: bool = True
+    smtp_timeout_seconds: int = 20
+    frontend_url: str = "http://localhost:3000"
     
     # AWS (Phase 5)
     aws_access_key_id: Optional[str] = None

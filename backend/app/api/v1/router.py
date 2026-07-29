@@ -8,6 +8,9 @@ from app.api.v1.assets.routes import router as assets_router
 from app.api.v1.scans.routes import router as scans_router
 from app.api.v1.dashboard.routes import router as dashboard_router
 from app.api.v1.ai_analysis import router as ai_analysis_router
+from app.api.v1.recon import router as recon_router
+from app.api.v1.schedules import router as schedules_router
+from app.api.v1.report_listing import router as report_listing_router
 
 # Create main v1 router
 router = APIRouter(prefix="/api/v1")
@@ -18,6 +21,9 @@ router.include_router(assets_router)
 router.include_router(scans_router)
 router.include_router(dashboard_router)
 router.include_router(ai_analysis_router)
+router.include_router(recon_router)
+router.include_router(schedules_router)
+router.include_router(report_listing_router)
 
 # Include advanced phase routers
 from app.api.v1.phases_2_to_10 import (

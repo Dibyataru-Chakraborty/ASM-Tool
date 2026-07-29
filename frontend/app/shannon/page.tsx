@@ -3,6 +3,16 @@ import AppLayout from '@/components/layout/AppLayout'
 import { AuthProvider } from '@/lib/auth'
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import {
+  AlertTriangle,
+  Bot,
+  Bug,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Map as MapIcon,
+  Rocket,
+} from 'lucide-react'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const H = () => ({ Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('access_token') : ''}` })
@@ -152,7 +162,8 @@ function ShannonPageInner() {
       {/* Header */}
       <div>
         <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
-          🤖 Shannon AI Pentester
+          <Bot className="h-5 w-5 text-blue-400" aria-hidden="true" />
+          <span>Shannon AI Pentester</span>
           <span className="text-xs bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-normal">Gemini 1.5 Pro</span>
         </h1>
         <p className="text-xs text-gray-500 mt-0.5">5-phase AI pentest · No exploit = no finding · Full Gemini-powered report</p>
@@ -165,12 +176,20 @@ function ShannonPageInner() {
             onKeyDown={e => e.key === 'Enter' && !loading && start()}
             placeholder="https://target.com" type="url"
             className="input flex-1" />
-          <button onClick={start} disabled={loading} className="btn-blue whitespace-nowrap">
-            {loading ? '⏳ Scanning…' : '🚀 Start Scan'}
+          <button onClick={start} disabled={loading} className="btn-blue inline-flex items-center gap-2 whitespace-nowrap">
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Rocket className="h-4 w-4" aria-hidden="true" />
+            )}
+            <span>{loading ? 'Scanning…' : 'Start Scan'}</span>
           </button>
         </div>
         {error && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
-        <p className="text-[10px] text-gray-600">⚠ Only scan targets you own or have written permission to test.</p>
+        <p className="flex items-center gap-1 text-[10px] text-gray-600">
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+          <span>Only scan targets you own or have written permission to test.</span>
+        </p>
       </div>
 
       {/* How it works */}
@@ -239,7 +258,7 @@ function ShannonPageInner() {
           {/* Done banner */}
           <div className="card p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">✅</span>
+              <CheckCircle2 className="h-7 w-7 text-green-400" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-gray-200">Scan Complete</p>
                 <p className="text-xs text-gray-500">{findings.length} confirmed finding{findings.length !== 1 ? 's' : ''} · Powered by Gemini 1.5 Pro</p>
@@ -274,13 +293,14 @@ function ShannonPageInner() {
           {/* Tabs */}
           <div className="flex gap-1">
             {[
-              { id: 'findings', label: `🐛 Findings (${findings.length})` },
-              { id: 'surface',  label: '🗺 Attack Surface'               },
-              { id: 'report',   label: '📄 Full Report'                  },
+              { id: 'findings', label: `Findings (${findings.length})`, icon: <Bug className="h-3.5 w-3.5" aria-hidden="true" /> },
+              { id: 'surface',  label: 'Attack Surface', icon: <MapIcon className="h-3.5 w-3.5" aria-hidden="true" /> },
+              { id: 'report',   label: 'Full Report', icon: <FileText className="h-3.5 w-3.5" aria-hidden="true" /> },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab === t.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-[#21262d]'}`}>
-                {t.label}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${tab === t.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-[#21262d]'}`}>
+                {t.icon}
+                <span>{t.label}</span>
               </button>
             ))}
           </div>
@@ -290,7 +310,7 @@ function ShannonPageInner() {
             <div className="space-y-2">
               {findings.length === 0 ? (
                 <div className="card p-10 text-center">
-                  <p className="text-3xl mb-2">✅</p>
+                  <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-400" aria-hidden="true" />
                   <p className="text-sm font-medium text-gray-300">No confirmed exploits</p>
                   <p className="text-xs text-gray-600 mt-1">Shannon policy: No exploit = No finding</p>
                 </div>

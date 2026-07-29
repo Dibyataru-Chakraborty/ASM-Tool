@@ -4,6 +4,7 @@ import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
 import { AuthProvider } from '@/lib/auth'
 import asm from '@/lib/api'
+import { CalendarClock, FileText, Server, Zap } from 'lucide-react'
 
 const SEV_CLS: Record<string,string> = {
   critical:'text-red-400',high:'text-orange-400',medium:'text-yellow-400',low:'text-blue-400',info:'text-gray-400'
@@ -45,7 +46,7 @@ export default function Dashboard() {
         {[
           {l:'Assets',v:data?.assets||0,e:'🖥️',href:'/assets'},
           {l:'Total Scans',v:scans.total||0,e:'🔭',href:'/scans'},
-          {l:'Vulnerabilities',v:vulns.total||0,e:'🐛',href:'/vulnerabilities'},
+          {l:'Vulnerabilities',v:vulns.total||0,e:'🐞',href:'/vulnerabilities'},
           {l:'Running',v:(scans.running||0)+(scans.queued||0),e:'⚡',href:'/scans'},
         ].map(s=>(
           <Link key={s.l} href={s.href} className="card p-4 hover:border-blue-500/40 transition block">
@@ -125,14 +126,18 @@ export default function Dashboard() {
       {/* Quick links */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          {l:'Manage Assets',href:'/assets',e:'🖥️'},
-          {l:'Scan Scheduler',href:'/scheduler',e:'🕐'},
-          {l:'View Reports',href:'/reports',e:'📄'},
-          {l:'AI Pentest',href:'/shannon',e:'🤖'},
-        ].map(c=>(
-          <Link key={c.l} href={c.href} className="card p-3 flex items-center gap-2 hover:border-blue-500/40 transition">
-            <span className="text-xl">{c.e}</span>
-            <span className="text-sm text-gray-300">{c.l}</span>
+          {l:'Manage Assets',href:'/assets',icon:Server,iconColor:'text-blue-400'},
+          {l:'Scan Scheduler',href:'/scheduler',icon:CalendarClock,iconColor:'text-purple-400'},
+          {l:'View Reports',href:'/reports',icon:FileText,iconColor:'text-green-400'},
+          {l:'AI Pentest',href:'/shannon',icon:Zap,iconColor:'text-orange-400'},
+        ].map(({l,href,icon:Icon,iconColor})=>(
+          <Link
+            key={l}
+            href={href}
+            className="card rounded-lg px-4 py-3 flex items-center gap-2 hover:border-blue-500/40 transition"
+          >
+            <Icon className={`h-5 w-5 shrink-0 ${iconColor}`} aria-hidden="true" />
+            <span className="text-sm text-gray-300">{l}</span>
           </Link>
         ))}
       </div>

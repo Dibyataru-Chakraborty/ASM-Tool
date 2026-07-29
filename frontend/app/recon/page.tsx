@@ -1,4 +1,6 @@
 'use client'
+import AppLayout from '@/components/layout/AppLayout'
+import { AuthProvider } from '@/lib/auth'
 
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
@@ -12,7 +14,7 @@ function authHeader() {
 
 type Tab = 'start' | 'subdomains' | 'ips' | 'screenshots' | 'vulns' | 'enrich' | 'status'
 
-export default function ReconPage() {
+function ReconPageInner() {
   const [tab, setTab]           = useState<Tab>('start')
   const [domainId, setDomainId] = useState('')
   const [domain, setDomain]     = useState('')
@@ -20,11 +22,6 @@ export default function ReconPage() {
   const [taskId, setTaskId]     = useState('')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
-
-  const [assets, setAssets]     = useState<any[]>([])
-  const [domains, setDomains]   = useState<any[]>([])
-  const [selectedAssetId, setSelectedAssetId]   = useState('')
-  const [selectedDomainId, setSelectedDomainId] = useState('')
 
   const [subdomains, setSubdomains]   = useState<any[]>([])
   const [ips, setIps]                 = useState<any[]>([])
@@ -35,62 +32,6 @@ export default function ReconPage() {
 
   const [enrichIp, setEnrichIp]       = useState('')
   const [enrichResult, setEnrichResult] = useState<any>(null)
-
-  // Load active assets on mount
-  useEffect(() => {
-    axios.get(`${API}/api/v1/assets`, { headers: authHeader() })
-      .then(r => {
-        const items = r.data.items || []
-        setAssets(items)
-        if (items.length > 0) {
-          setSelectedAssetId(items[0].id)
-          setAssetId(items[0].id)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  // Load domains when selected asset changes
-  useEffect(() => {
-    if (!selectedAssetId) {
-      setDomains([])
-      setDomainId('')
-      setDomain('')
-      setSelectedDomainId('')
-      return
-    }
-    axios.get(`${API}/api/v1/assets/${selectedAssetId}/domains`, { headers: authHeader() })
-      .then(r => {
-        const items = r.data || []
-        setDomains(items)
-        if (items.length > 0) {
-          setSelectedDomainId(items[0].id)
-          setDomainId(items[0].id)
-          setDomain(items[0].domain)
-        } else {
-          setSelectedDomainId('')
-          setDomainId('')
-          setDomain('')
-        }
-      })
-      .catch(() => {
-        setDomains([])
-        setDomainId('')
-        setDomain('')
-        setSelectedDomainId('')
-      })
-  }, [selectedAssetId])
-
-  const handleDomainChange = (domainIdVal: string) => {
-    setSelectedDomainId(domainIdVal)
-    setDomainId(domainIdVal)
-    const dom = domains.find(d => d.id === domainIdVal)
-    if (dom) {
-      setDomain(dom.domain)
-    } else {
-      setDomain('')
-    }
-  }
 
   // Load providers status on mount
   useEffect(() => {
@@ -228,30 +169,19 @@ export default function ReconPage() {
         {/* Config row */}
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Asset (Inventory)</label>
-            <select className="w-full bg-[#161b22] border border-[#30363d] text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-              value={selectedAssetId} onChange={e => {
-                setSelectedAssetId(e.target.value)
-                setAssetId(e.target.value)
-              }}>
-              <option value="" disabled>Select Asset...</option>
-              {assets.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <label className="block text-xs text-gray-500 mb-1">Domain</label>
+            <input className="w-full bg-[#161b22] border border-[#30363d] text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="example.com" value={domain} onChange={e => setDomain(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Domain Target</label>
-            <select className="w-full bg-[#161b22] border border-[#30363d] text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-              value={selectedDomainId} onChange={e => handleDomainChange(e.target.value)}>
-              <option value="" disabled>
-                {domains.length === 0 ? 'No domains found' : 'Select Domain...'}
-              </option>
-              {domains.map(d => <option key={d.id} value={d.id}>{d.domain}</option>)}
-            </select>
+            <label className="block text-xs text-gray-500 mb-1">Asset ID</label>
+            <input className="w-full bg-[#161b22] border border-[#30363d] text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="uuid" value={assetId} onChange={e => setAssetId(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Domain ID (Read-only)</label>
-            <input className="w-full bg-[#161b22] border border-[#30363d] text-gray-500 rounded-lg px-3 py-2 text-sm focus:outline-none cursor-not-allowed"
-              placeholder="Select asset & domain to load ID" value={domainId} readOnly />
+            <label className="block text-xs text-gray-500 mb-1">Domain ID</label>
+            <input className="w-full bg-[#161b22] border border-[#30363d] text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="uuid" value={domainId} onChange={e => setDomainId(e.target.value)} />
           </div>
         </div>
 
@@ -639,5 +569,15 @@ export default function ReconPage() {
 
       </div>
     </div>
+  )
+}
+
+export default function ReconPage(props: any) {
+  return (
+    <AuthProvider>
+      <AppLayout>
+        <ReconPageInner {...props} />
+      </AppLayout>
+    </AuthProvider>
   )
 }

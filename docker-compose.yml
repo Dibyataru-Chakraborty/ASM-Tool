@@ -61,7 +61,6 @@ services:
     networks:
       - asm_network
 
-
   pd_installer:
     image: alpine:latest
     container_name: asm_pd_installer
@@ -70,25 +69,27 @@ services:
       - pd_tools:/pd_tools
     command: >
       sh -c "
-        apk add --no-cache wget tar &&
-        cd /tmp &&
+        apk add --no-cache curl jq unzip tar &&
+        mkdir -p /pd_tools &&
         echo 'Downloading subfinder...' &&
-        wget -q https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_linux_amd64.zip -O subfinder.zip &&
-        unzip -q subfinder.zip subfinder && mv subfinder /pd_tools/ &&
+        SUBFINDER_URL=$$(curl -s https://api.github.com/repos/projectdiscovery/subfinder/releases/latest | jq -r '.assets[] | select(.name | contains(\"subfinder_\") and contains(\"linux_amd64.zip\")) | .browser_download_url') &&
+        curl -L \"$$SUBFINDER_URL\" -o /tmp/subfinder.zip && unzip -o /tmp/subfinder.zip subfinder -d /pd_tools/ &&
         echo 'Downloading dnsx...' &&
-        wget -q https://github.com/projectdiscovery/dnsx/releases/latest/download/dnsx_linux_amd64.zip -O dnsx.zip &&
-        unzip -q dnsx.zip dnsx && mv dnsx /pd_tools/ &&
+        DNSX_URL=$$(curl -s https://api.github.com/repos/projectdiscovery/dnsx/releases/latest | jq -r '.assets[] | select(.name | contains(\"dnsx_\") and contains(\"linux_amd64.zip\")) | .browser_download_url') &&
+        curl -L \"$$DNSX_URL\" -o /tmp/dnsx.zip && unzip -o /tmp/dnsx.zip dnsx -d /pd_tools/ &&
         echo 'Downloading naabu...' &&
-        wget -q https://github.com/projectdiscovery/naabu/releases/latest/download/naabu_linux_amd64.zip -O naabu.zip &&
-        unzip -q naabu.zip naabu && mv naabu /pd_tools/ &&
+        NAABU_URL=$$(curl -s https://api.github.com/repos/projectdiscovery/naabu/releases/latest | jq -r '.assets[] | select(.name | contains(\"naabu_\") and contains(\"linux_amd64.zip\")) | .browser_download_url') &&
+        curl -L \"$$NAABU_URL\" -o /tmp/naabu.zip && unzip -o /tmp/naabu.zip naabu -d /pd_tools/ &&
         echo 'Downloading httpx...' &&
-        wget -q https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_linux_amd64.zip -O httpx.zip &&
-        unzip -q httpx.zip httpx && mv httpx /pd_tools/ &&
+        HTTPX_URL=$$(curl -s https://api.github.com/repos/projectdiscovery/httpx/releases/latest | jq -r '.assets[] | select(.name | contains(\"httpx_\") and contains(\"linux_amd64.zip\")) | .browser_download_url') &&
+        curl -L \"$$HTTPX_URL\" -o /tmp/httpx.zip && unzip -o /tmp/httpx.zip httpx -d /pd_tools/ &&
         echo 'Downloading nuclei...' &&
-        wget -q https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip -O nuclei.zip &&
-        unzip -q nuclei.zip nuclei && mv nuclei /pd_tools/ &&
+        NUCLEI_URL=$$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | jq -r '.assets[] | select(.name | contains(\"nuclei_\") and contains(\"linux_amd64.zip\")) | .browser_download_url') &&
+        curl -L \"$$NUCLEI_URL\" -o /tmp/nuclei.zip && unzip -o /tmp/nuclei.zip nuclei -d /pd_tools/ &&
         echo 'Downloading gowitness...' &&
-        wget -q https://github.com/sensepost/gowitness/releases/latest/download/gowitness-linux-amd64 -O /pd_tools/gowitness &&
+        GOWITNESS_URL=$$(curl -s https://api.github.com/repos/sensepost/gowitness/releases/latest | jq -r '.assets[] | select(.name | contains(\"gowitness\") and contains(\"linux\") and contains(\"amd64\")) | .browser_download_url') &&
+        curl -L \"$$GOWITNESS_URL\" -o /pd_tools/gowitness &&
+        rm -f /tmp/*.zip &&
         chmod +x /pd_tools/* &&
         echo 'All ProjectDiscovery tools installed successfully!'
       "

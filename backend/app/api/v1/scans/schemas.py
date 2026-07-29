@@ -15,6 +15,12 @@ class ScanInitiateRequest(BaseModel):
     scan_type: str = Field(default="discovery", pattern="^(discovery|ssl|screenshot|dns|port_scan|tech_detect|full|quick|vuln_scan|ssl_check)$")
 
 
+class TriggerScanRequest(BaseModel):
+    """Trigger scan from asset page — only asset_id required."""
+    asset_id: str
+    scan_type: str = "discovery"
+
+
 class ScanResponse(BaseModel):
     """Scan in responses."""
     id: str
@@ -28,6 +34,11 @@ class ScanResponse(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    # Frontend compatibility: expose id as scan_job_id
+    @property
+    def scan_job_id(self):
+        return self.id
 
     class Config:
         from_attributes = True

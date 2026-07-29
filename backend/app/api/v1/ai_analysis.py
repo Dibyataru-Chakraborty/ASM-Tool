@@ -16,7 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/ai", tags=["ai-analysis"])
+router = APIRouter(prefix="/ai", tags=["ai-analysis"])
 
 
 @router.post("/analyze/vulnerability/{vulnerability_id}")

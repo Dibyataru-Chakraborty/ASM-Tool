@@ -10,6 +10,7 @@ from app.repositories.scan_repo import ScanRepository
 from app.exceptions import NotFoundError, ValidationError
 from app.api.v1.scans.schemas import (
     ScanInitiateRequest,
+    TriggerScanRequest,
     ScanResponse,
     DomainDiscoveryRequest,
     DomainDiscoveryResponse,
@@ -21,6 +22,53 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/scans", tags=["scans"])
+
+
+@router.post("/trigger", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_scan(
+    request: TriggerScanRequest,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Trigger a scan for an asset using its saved target field."""
+    try:
+        from app.models import Asset, Domain
+        asset = db.query(Asset).filter(
+            Asset.id == request.asset_id,
+            Asset.user_id == current_user.id
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        service = DiscoveryService(db)
+
+        # Resolve target: use asset.target (saved from the form), fallback to asset.name
+        target_value = (asset.target or asset.name or "").strip()
+
+        # Find or create a domain entry for this target
+        existing_domain = db.query(Domain).filter(Domain.asset_id == asset.id).first()
+        if existing_domain:
+            domain_id = existing_domain.id
+        else:
+            domain_name = target_value if service._is_valid_domain(target_value) else "target.local"
+            domain = service.create_domain(asset.id, domain_name)
+            domain_id = domain.id
+
+        scan = service.initiate_scan(
+            asset_id=asset.id,
+            domain_id=domain_id,
+            scan_type=request.scan_type
+        )
+
+        background_tasks.add_task(service.run_scan_simulation, scan.id, domain_id)
+
+        return {"scan_job_id": scan.id, "status": scan.status, "asset_id": asset.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering scan: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger scan: {str(e)}")
 
 
 @router.post("/discover", response_model=DomainDiscoveryResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -116,17 +164,24 @@ async def initiate_scan(
 
 @router.get("", response_model=ScanListResponse)
 async def list_scans(
-    asset_id: str = Query(...),
+    asset_id: str = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List scans for an asset."""
+    """List scans for an asset or all scans for current user."""
     try:
         scan_repo = ScanRepository(db)
-        scans, total = scan_repo.get_by_asset_id(asset_id, skip, limit)
-        
+        if asset_id:
+            scans, total = scan_repo.get_by_asset_id(asset_id, skip, limit)
+        else:
+            # Return all scans belonging to the current user's assets
+            from app.models import Scan, Asset
+            query = db.query(Scan).join(Asset).filter(Asset.user_id == current_user.id)
+            total = query.count()
+            scans = query.order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
+
         return {
             "total": total,
             "skip": skip,

@@ -1,30 +1,9 @@
-FROM python:3.12-slim
+FROM golang:alpine AS go-builder
 
-# Set working directory
-WORKDIR /app
+# Install build dependencies
+RUN apk add --no-cache git libpcap-dev gcc musl-dev
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PATH=$PATH:/usr/local/go/bin:/root/go/bin \
-    PYTHONPATH=/app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    wget \
-    git \
-    libpcap-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Go
-RUN wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz && \
-    rm go1.21.6.linux-amd64.tar.gz
-
-# Install ProjectDiscovery tools (all open-source tools, excluding pdtm)
+# Install ProjectDiscovery tools (compiled to /go/bin/)
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
@@ -38,8 +17,29 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/projectdiscovery/notify/cmd/notify@latest && \
     go install -v github.com/projectdiscovery/proxify/cmd/proxify@latest && \
     go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest && \
-    go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest && \
-    cp /root/go/bin/* /usr/local/bin/
+    go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+
+# Stage 2: Final runtime Python image
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PATH=$PATH:/usr/local/pd_tools \
+    PYTHONPATH=/app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    libpcap-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled Go tools from builder
+COPY --from=go-builder /go/bin/* /usr/local/bin/
 
 # Copy requirements
 COPY requirements.txt .

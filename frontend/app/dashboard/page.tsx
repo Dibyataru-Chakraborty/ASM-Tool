@@ -1,109 +1,142 @@
 'use client'
-
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import axios from 'axios'
+import AppLayout from '@/components/layout/AppLayout'
+import { AuthProvider } from '@/lib/auth'
+import asm from '@/lib/api'
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const H = () => ({ Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('access_token') : ''}` })
+const SEV_CLS: Record<string,string> = {
+  critical:'text-red-400',high:'text-orange-400',medium:'text-yellow-400',low:'text-blue-400',info:'text-gray-400'
+}
+const STATUS_CLS: Record<string,string> = {
+  running:'text-blue-400',queued:'text-yellow-400',completed:'text-green-400',failed:'text-red-400',cancelled:'text-gray-500'
+}
+const TOOL_ICONS: Record<string,string> = {
+  subfinder:'🌐',dnsx:'🔍',httpx:'🌍',naabu:'🚪',nmap:'🗺️',
+  katana:'🕷️',dirsearch:'📁',nuclei:'⚡',xsstrike:'💉',gowitness:'📸',report:'📄'
+}
 
-const CARDS = [
-  { label: 'Assets',           href: '/assets',         emoji: '🖥️',  color: 'from-blue-600/20 to-blue-800/10  border-blue-500/20' },
-  { label: 'Recon Engine',     href: '/recon',          emoji: '🔭',  color: 'from-purple-600/20 to-purple-800/10 border-purple-500/20' },
-  { label: 'AI Pentest',       href: '/shannon',        emoji: '🤖',  color: 'from-orange-600/20 to-orange-800/10 border-orange-500/20' },
-  { label: 'Vulnerabilities',  href: '/vulnerabilities', emoji: '🐛', color: 'from-red-600/20 to-red-800/10 border-red-500/20' },
-  { label: 'Alerts',           href: '/alerts',         emoji: '🔔',  color: 'from-yellow-600/20 to-yellow-800/10 border-yellow-500/20' },
-  { label: 'AI Analysis',      href: '/ai-analysis',    emoji: '🧠',  color: 'from-cyan-600/20 to-cyan-800/10 border-cyan-500/20' },
-  { label: 'Reports',          href: '/reports',        emoji: '📄',  color: 'from-green-600/20 to-green-800/10 border-green-500/20' },
-  { label: 'Settings',         href: '/settings',       emoji: '⚙️',  color: 'from-gray-600/20 to-gray-800/10 border-gray-500/20' },
-]
+export default function Dashboard() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
-export default function DashboardPage() {
-  const [stats, setStats] = useState({ assets: 0, vulns: 0, alerts: 0, scans: 0 })
-  const [health, setHealth] = useState<'ok' | 'down' | 'loading'>('loading')
+  const load = () => asm.getDashboard().then(setData).catch(()=>{}).finally(()=>setLoading(false))
 
-  useEffect(() => {
-    axios.get(`${API}/health`).then(() => setHealth('ok')).catch(() => setHealth('down'))
-    axios.get(`${API}/api/v1/assets`, { headers: H() })
-      .then(r => setStats(s => ({ ...s, assets: r.data.total || 0 }))).catch(() => {})
-    axios.get(`${API}/api/v1/vulnerabilities`, { headers: H() })
-      .then(r => setStats(s => ({ ...s, vulns: r.data.total || 0 }))).catch(() => {})
-    axios.get(`${API}/api/v1/alerts`, { headers: H() })
-      .then(r => setStats(s => ({ ...s, alerts: r.data.total || 0 }))).catch(() => {})
-    axios.get(`${API}/api/v1/dashboard/scan-statistics`, { headers: H() })
-      .then(r => setStats(s => ({ ...s, scans: r.data.total || 0 }))).catch(() => {})
-  }, [])
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin text-4xl">⚡</div></div>
+
+  const scans = data?.scans || {}
+  const vulns = data?.vulnerabilities || {}
+  const running = data?.running_scans || []
 
   return (
-    <div className="space-y-6">
-      {/* Welcome */}
+    <AuthProvider><AppLayout>
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-100">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Attack Surface Management Platform</p>
-        </div>
-        <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
-          health === 'ok'      ? 'text-green-400 bg-green-500/10 border-green-500/20' :
-          health === 'down'    ? 'text-red-400 bg-red-500/10 border-red-500/20' :
-                                 'text-gray-500 bg-gray-500/10 border-gray-500/20'
-        }`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${health === 'ok' ? 'bg-green-400' : health === 'down' ? 'bg-red-400' : 'bg-gray-500'}`} />
-          {health === 'ok' ? 'API Online' : health === 'down' ? 'API Offline' : 'Checking...'}
+        <h1 className="text-base font-bold text-gray-100">Dashboard</h1>
+        <div className="flex gap-2">
+          <Link href="/assets" className="btn-blue text-xs">+ Add Asset</Link>
         </div>
       </div>
 
-      {/* Quick stats */}
+      {/* Top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Assets',          value: stats.assets, emoji: '🖥️' },
-          { label: 'Vulnerabilities', value: stats.vulns,  emoji: '🐛' },
-          { label: 'Active Alerts',   value: stats.alerts, emoji: '🔔' },
-          { label: 'Total Scans',     value: stats.scans,  emoji: '🔭' },
-        ].map(s => (
-          <div key={s.label} className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
-            <div className="text-2xl mb-1">{s.emoji}</div>
-            <div className="text-2xl font-bold text-gray-100">{s.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
-          </div>
+          {l:'Assets',v:data?.assets||0,e:'🖥️',href:'/assets'},
+          {l:'Total Scans',v:scans.total||0,e:'🔭',href:'/scans'},
+          {l:'Vulnerabilities',v:vulns.total||0,e:'🐛',href:'/vulnerabilities'},
+          {l:'Running',v:(scans.running||0)+(scans.queued||0),e:'⚡',href:'/scans'},
+        ].map(s=>(
+          <Link key={s.l} href={s.href} className="card p-4 hover:border-blue-500/40 transition block">
+            <div className="text-2xl mb-1">{s.e}</div>
+            <div className="text-2xl font-bold text-gray-100">{s.v}</div>
+            <div className="text-xs text-gray-500">{s.l}</div>
+          </Link>
         ))}
       </div>
 
-      {/* Navigation cards */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-400 mb-3">Quick Access</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {CARDS.map(c => (
-            <Link key={c.href} href={c.href}
-              className={`bg-gradient-to-br ${c.color} border rounded-xl p-4 hover:scale-[1.02] transition-all duration-200 block`}>
-              <div className="text-2xl mb-2">{c.emoji}</div>
-              <div className="text-sm font-semibold text-gray-200">{c.label}</div>
-            </Link>
+      {/* Severity breakdown */}
+      <div className="card p-4">
+        <p className="text-xs font-semibold text-gray-400 mb-3">Vulnerability Breakdown</p>
+        <div className="grid grid-cols-4 gap-3">
+          {['critical','high','medium','low'].map(s=>(
+            <div key={s} className="text-center">
+              <p className={`text-xl font-bold ${SEV_CLS[s]}`}>{vulns[s]||0}</p>
+              <p className="text-xs text-gray-600 capitalize">{s}</p>
+            </div>
           ))}
         </div>
       </div>
 
-      {/* Quick start */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-gray-200 mb-3">🚀 Quick Start</h2>
-        <div className="space-y-2 text-sm text-gray-400">
-          <div className="flex items-start gap-2">
-            <span className="text-blue-400 font-bold shrink-0">1.</span>
-            <span>Go to <Link href="/assets" className="text-blue-400 hover:underline">Assets</Link> → Add your domain (e.g. example.com)</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-blue-400 font-bold shrink-0">2.</span>
-            <span>Go to <Link href="/recon" className="text-blue-400 hover:underline">Recon Engine</Link> → Enter domain ID → Start Full Recon</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-blue-400 font-bold shrink-0">3.</span>
-            <span>Go to <Link href="/shannon" className="text-blue-400 hover:underline">AI Pentest</Link> → Enter target URL → Start Shannon scan</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-blue-400 font-bold shrink-0">4.</span>
-            <span>Check <Link href="/vulnerabilities" className="text-blue-400 hover:underline">Vulnerabilities</Link> and use AI Analysis for remediation</span>
-          </div>
+      {/* Scan queue */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#21262d]">
+          <p className="text-xs font-semibold text-gray-300">Scan Queue</p>
+          <Link href="/scans" className="text-xs text-blue-400">View all →</Link>
         </div>
+        {running.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-600">
+            No active scans · <Link href="/assets" className="text-blue-400">Start one</Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#21262d]">
+            {running.map((job: any) => (
+              <div key={job.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-mono text-gray-200 truncate">{job.asset_target}</span>
+                    <span className={`text-xs ${STATUS_CLS[job.status]}`}>● {job.status}</span>
+                  </div>
+                  {job.current_tool && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <span>{TOOL_ICONS[job.current_tool]||'🔧'}</span>
+                      <span>Running: {job.current_tool}</span>
+                    </div>
+                  )}
+                  {/* Progress bar */}
+                  <div className="mt-2 h-1 bg-[#21262d] rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 transition-all duration-500 rounded-full" style={{width:`${job.progress||0}%`}} />
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{job.progress||0}% complete</p>
+                </div>
+                <Link href={`/scans/${job.id}`} className="text-xs text-blue-400 hover:text-blue-300 shrink-0">View →</Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Scan stats */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          {l:'Queued',v:scans.queued||0,c:'text-yellow-400'},
+          {l:'Running',v:scans.running||0,c:'text-blue-400'},
+          {l:'Completed',v:scans.completed||0,c:'text-green-400'},
+          {l:'Failed',v:scans.failed||0,c:'text-red-400'},
+        ].map(s=>(
+          <div key={s.l} className="card p-3 text-center">
+            <p className={`text-xl font-bold ${s.c}`}>{s.v}</p>
+            <p className="text-xs text-gray-600">{s.l}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick links */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          {l:'Manage Assets',href:'/assets',e:'🖥️'},
+          {l:'Scan Scheduler',href:'/scheduler',e:'🕐'},
+          {l:'View Reports',href:'/reports',e:'📄'},
+          {l:'AI Pentest',href:'/shannon',e:'🤖'},
+        ].map(c=>(
+          <Link key={c.l} href={c.href} className="card p-3 flex items-center gap-2 hover:border-blue-500/40 transition">
+            <span className="text-xl">{c.e}</span>
+            <span className="text-sm text-gray-300">{c.l}</span>
+          </Link>
+        ))}
       </div>
     </div>
+    </AppLayout></AuthProvider>
   )
 }

@@ -25,28 +25,31 @@ class AssetService:
         self,
         user_id: str,
         name: str,
+        target: Optional[str] = None,
         description: Optional[str] = None,
         asset_type: str = "domain",
+        tags: Optional[List[str]] = None,
     ) -> Asset:
         """Create a new asset."""
-        # Validate input
         if not name or len(name.strip()) == 0:
             raise ValidationError("Asset name cannot be empty")
 
-        # Check for duplicates
         existing = self.asset_repo.get_by_user_and_name(user_id, name)
         if existing:
             raise ConflictError(f"Asset '{name}' already exists for this user")
 
-        # Create asset
+        tags_str = ", ".join(tags) if tags else ""
         try:
             asset = self.asset_repo.create({
                 "user_id": user_id,
                 "name": name.strip(),
+                "target": (target or name).strip(),
                 "description": description,
                 "asset_type": asset_type,
                 "status": "active",
                 "risk_score": 0,
+                "tags": tags_str,
+                "scan_count": 0,
             })
             logger.info(f"Asset created: {asset.id} for user {user_id}")
             return asset
@@ -79,8 +82,10 @@ class AssetService:
         asset_id: str,
         user_id: str,
         name: Optional[str] = None,
+        target: Optional[str] = None,
         description: Optional[str] = None,
         status: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> Asset:
         """Update an asset."""
         asset = self.get_asset(asset_id, user_id)
@@ -88,12 +93,16 @@ class AssetService:
         update_data = {}
         if name:
             update_data["name"] = name
+        if target is not None:
+            update_data["target"] = target
         if description is not None:
             update_data["description"] = description
         if status:
             if status not in ["active", "archived", "monitoring"]:
                 raise ValidationError("Invalid status value")
             update_data["status"] = status
+        if tags is not None:
+            update_data["tags"] = ", ".join(tags)
 
         if not update_data:
             return asset

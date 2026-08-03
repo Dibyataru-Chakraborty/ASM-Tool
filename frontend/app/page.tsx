@@ -22,7 +22,7 @@ export default function Home() {
 
         <div className="grid grid-cols-3 gap-4 text-sm">
           {[
-            { e:'🔭', t:'Real Scanning',    d:'subfinder · httpx · naabu · nmap · nuclei' },
+            { e:'🔭', t:'Real Scanning',    d:'Multi-stage asset, service, and vulnerability analysis' },
             { e:'🤖', t:'AI Analysis',      d:'Gemini 1.5 Pro powers every report' },
             { e:'📄', t:'Auto Reports',     d:'Executive + Technical after every scan' },
           ].map(f => (

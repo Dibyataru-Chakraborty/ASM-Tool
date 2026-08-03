@@ -12,7 +12,6 @@ export default function VulnsPage() {
   const [vulns, setVulns]   = useState<any[]>([])
   const [total, setTotal]   = useState(0)
   const [sev, setSev]       = useState('')
-  const [tool, setTool]     = useState('')
   const [skip, setSkip]     = useState(0)
   const [loading, setLoading] = useState(true)
   const LIMIT = 20
@@ -21,12 +20,11 @@ export default function VulnsPage() {
     setLoading(true)
     const p: any = { skip, limit: LIMIT }
     if (sev)  p.severity    = sev
-    if (tool) p.source_tool = tool
     const r = await asm.getVulns(p)
     setVulns(r.vulnerabilities || [])
     setTotal(r.total || 0)
     setLoading(false)
-  }, [sev, tool, skip])
+  }, [sev, skip])
 
   useEffect(() => { load() }, [load])
 
@@ -61,10 +59,7 @@ export default function VulnsPage() {
         <select className="input py-1.5 text-xs w-36" value={sev} onChange={e=>{setSev(e.target.value);setSkip(0)}}>
           {SEVS.map(s=><option key={s} value={s}>{s||'All Severity'}</option>)}
         </select>
-        <select className="input py-1.5 text-xs w-36" value={tool} onChange={e=>{setTool(e.target.value);setSkip(0)}}>
-          {['','nuclei','xsstrike'].map(t=><option key={t} value={t}>{t||'All Tools'}</option>)}
-        </select>
-        <button onClick={()=>{setSev('');setTool('');setSkip(0)}} className="btn-gray text-xs">Clear</button>
+        <button onClick={()=>{setSev('');setSkip(0)}} className="btn-gray text-xs">Clear</button>
       </div>
 
       {/* Table */}
@@ -80,7 +75,7 @@ export default function VulnsPage() {
         ) : (
           <table className="w-full text-xs">
             <thead><tr className="border-b border-[#21262d]">
-              {['Title','Severity','CVSS','CVE','Host','Tool','Date','Actions'].map(h=>(
+              {['Title','Severity','CVSS','CVE','Host','Date','Actions'].map(h=>(
                 <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium uppercase tracking-wide">{h}</th>
               ))}
             </tr></thead>
@@ -99,7 +94,6 @@ export default function VulnsPage() {
                   </td>
                   <td className="px-4 py-2.5 font-mono text-blue-400 text-[10px]">{v.cve_id||'—'}</td>
                   <td className="px-4 py-2.5 font-mono text-gray-400 truncate max-w-[120px]">{v.host||'—'}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{v.source_tool||'—'}</td>
                   <td className="px-4 py-2.5 text-gray-500">{v.created_at ? new Date(v.created_at).toLocaleDateString():''}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex gap-2">

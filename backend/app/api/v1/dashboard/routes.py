@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.services.dashboard_service import DashboardService
+from app.services.discovery_service import get_live_scan_state
 from app.api.v1.dashboard.schemas import (
     RiskSummaryResponse,
     DashboardFullResponse,
@@ -135,13 +136,17 @@ async def get_full_dashboard(
         
         running_list = []
         for s in running_scans:
+            live_state = get_live_scan_state(s.id)
             running_list.append({
                 "id": s.id,
                 "asset_id": s.asset_id,
                 "asset_target": s.asset.name,
                 "status": s.status,
-                "current_tool": s.scan_type,
-                "progress": 50 if s.status == "running" else 0,
+                "current_tool": None,
+                "progress": live_state.get(
+                    "progress",
+                    0,
+                ),
             })
             
         assets_count = risk_summary.get("total_assets", 0)

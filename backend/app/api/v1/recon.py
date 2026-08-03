@@ -16,14 +16,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_current_user
-from app.models import Asset, Domain, Scan, Screenshot, Subdomain
+from app.models import AIServiceAssessment, Asset, Domain, Scan, Screenshot, Subdomain
 from app.models.phase2 import Port, Service, Vulnerability
 from app.services.discovery_service import DiscoveryService, get_live_scan_state
+from app.services.recon_tool_service import inspect_chromium, inspect_recon_tools
 from app.utils.database import SessionLocal, get_db
 
 
 router = APIRouter(prefix="/recon", tags=["recon"])
-TOOL_DIR = Path("/usr/local/pd_tools")
 REAL_RECON_SCAN_TYPE = "recon_full"
 
 
@@ -155,27 +155,19 @@ async def recon_assets(
 
 
 @router.get("/providers/status")
-async def provider_status(current_user=Depends(get_current_user)):
-    """Report executable/API availability without exposing credentials."""
-    tool_paths = {
-        name: Path("/usr/bin/nmap") if name == "nmap" else TOOL_DIR / name
-        for name in ("subfinder", "dnsx", "naabu", "nmap", "httpx", "nuclei", "gowitness")
-    }
-    tools = {}
-    for name, path in tool_paths.items():
-        tools[name] = {
-            "available": path.is_file() and os.access(path, os.X_OK),
-            "path": str(path),
-        }
-    chromium_path = Path("/usr/bin/chromium")
+def provider_status(
+    probe: bool = Query(True),
+    current_user=Depends(get_current_user),
+):
+    """Report every enabled scanner and optionally run safe startup probes."""
+    tools = inspect_recon_tools(probe=probe, config=settings)
+    chromium = inspect_chromium(probe=probe, config=settings)
     return {
-        "ready": all(tool["available"] for tool in tools.values()) and chromium_path.exists(),
+        "ready": all(tool["available"] for tool in tools.values()) and chromium["available"],
+        "probe_performed": probe,
         "projectdiscovery_tools": tools,
         "browser": {
-            "chromium": {
-                "available": chromium_path.exists(),
-                "path": str(chromium_path),
-            }
+            "chromium": chromium,
         },
         "ai_providers": {
             "gemini": {"configured": bool(settings.gemini_api_key)},
@@ -348,6 +340,7 @@ async def recon_subdomains(
             "open_ports": [port.port_number for port in ports],
             "services": [
                 {
+                    "id": service.id,
                     "port": port.port_number,
                     "protocol": port.protocol,
                     "name": service.service_name,
@@ -474,6 +467,59 @@ async def recon_vulnerabilities(
         "created_at": vulnerability.created_at,
     } for vulnerability, subdomain, port in rows]
     return {"vulnerabilities": vulnerabilities, "total": len(vulnerabilities)}
+
+
+@router.get("/ai-service-assessments")
+async def recon_ai_service_assessments(
+    scan_id: str = Query(...),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return grounded Gemini assessments for services from one owned scan."""
+    scan = (
+        db.query(Scan)
+        .join(Asset, Scan.asset_id == Asset.id)
+        .filter(Scan.id == scan_id, Asset.user_id == current_user.id)
+        .first()
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    rows = (
+        db.query(AIServiceAssessment, Service, Port, Subdomain)
+        .join(Service, AIServiceAssessment.service_id == Service.id)
+        .join(Port, Service.port_id == Port.id)
+        .join(Subdomain, Port.subdomain_id == Subdomain.id)
+        .filter(AIServiceAssessment.scan_id == scan_id)
+        .order_by(AIServiceAssessment.created_at.desc())
+        .all()
+    )
+    assessments = []
+    for assessment, service, port, subdomain in rows:
+        assessments.append({
+            "id": assessment.id,
+            "scan_id": assessment.scan_id,
+            "service_id": assessment.service_id,
+            "provider": assessment.provider,
+            "model_name": assessment.model_name,
+            "lifecycle_status": assessment.lifecycle_status,
+            "severity": assessment.severity,
+            "title": assessment.title,
+            "summary": assessment.summary,
+            "detected_version": assessment.detected_version,
+            "latest_version": assessment.latest_version,
+            "cves": _safe_json_list(assessment.cves),
+            "remediation": assessment.remediation,
+            "confidence": assessment.confidence,
+            "evidence_urls": _safe_json_list(assessment.evidence_urls),
+            "host": subdomain.subdomain,
+            "port": port.port_number,
+            "protocol": port.protocol,
+            "service_name": service.service_name,
+            "product": service.product,
+            "created_at": assessment.created_at,
+        })
+    return {"assessments": assessments, "total": len(assessments)}
 
 
 @router.post("/enrich-ip")

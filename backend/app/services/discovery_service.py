@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.exceptions import NotFoundError, ValidationError
 from app.models import DNSRecord, Domain, Scan, Subdomain
 from app.repositories.domain_repo import DomainRepository
@@ -29,22 +30,20 @@ def get_live_scan_state(scan_id: str) -> dict[str, Any]:
             **state,
             "live_subdomains": sorted(state.get("live_subdomains", set())),
         }
-
-
 def _set_live_scan_state(scan_id: str, **changes: Any) -> None:
     with _live_scan_lock:
         state = _live_scan_states.setdefault(scan_id, {"live_subdomains": set()})
         state.update(changes)
-
-
+def clear_live_scan_state(scan_id: str) -> None:
+    """Remove transient in-memory progress for a scan."""
+    with _live_scan_lock:
+        _live_scan_states.pop(scan_id, None)
 def _add_live_subdomain(scan_id: str, hostname: str) -> int:
     with _live_scan_lock:
         state = _live_scan_states.setdefault(scan_id, {"live_subdomains": set()})
         values = state.setdefault("live_subdomains", set())
         values.add(hostname)
         return len(values)
-
-
 class DiscoveryService:
     """Service for reconnaissance and discovery operations."""
 
@@ -258,14 +257,21 @@ class DiscoveryService:
                 raise NotFoundError("Scan target")
 
             self.scan_repo.update_status(scan_id, "running")
-            _set_live_scan_state(scan_id, status="running", progress=2)
+            _set_live_scan_state(
+                scan_id,
+                status="running",
+                current_tool=None,
+                progress=0,
+            )
             self.domain_repo.update_scan_status(domain_id, "scanning")
             result = self._run_projectdiscovery_pipeline(scan, domain)
 
+            warnings = result.get("warnings", [])
+            warning_message = "\n".join(warnings) if warnings else None
             self.scan_repo.update(scan_id, {
                 "discovered_count": result["discovered_count"],
                 "vulnerable_count": result["vulnerable_count"],
-                "error_message": None,
+                "error_message": warning_message,
             })
             self.scan_repo.update_status(scan_id, "completed")
             _set_live_scan_state(
@@ -286,10 +292,11 @@ class DiscoveryService:
                 asset.risk_score = result["risk_score"]
             self.db.commit()
             logger.info(
-                "Real recon scan %s completed with %s discoveries and %s vulnerabilities",
+                "Real recon scan %s completed with %s discoveries, %s vulnerabilities, and %s warning(s)",
                 scan_id,
                 result["discovered_count"],
                 result["vulnerable_count"],
+                len(warnings),
             )
         except Exception as exc:
             self.db.rollback()
@@ -310,9 +317,8 @@ class DiscoveryService:
             except Exception:
                 self.db.rollback()
 
-    def _run_projectdiscovery_pipeline(self, scan: Scan, domain: Domain) -> Dict[str, int]:
-        """Run six real scanners and persist only their factual output."""
-        import os
+    def _run_projectdiscovery_pipeline(self, scan: Scan, domain: Domain) -> Dict[str, Any]:
+        """Run the real multi-tool scanner pipeline and persist factual output."""
         import subprocess
         import tempfile
         from datetime import datetime, timezone
@@ -320,56 +326,175 @@ class DiscoveryService:
         from urllib.parse import urlparse
         from xml.etree import ElementTree
 
-        from app.models import DNSRecord, Screenshot, Subdomain
+        from app.models import DNSRecord, Screenshot, Secret, Subdomain
         from app.models.phase2 import Port, Service, Vulnerability
+        from app.services.extended_recon_service import (
+            collect_additional_subdomains,
+            collect_additional_urls,
+            run_specialized_assessments,
+        )
+        from app.services.recon_tool_service import (
+            enabled_recon_tool_paths,
+            inspect_chromium,
+            inspect_recon_tools,
+            unavailable_tool_messages,
+        )
 
-        tool_dir = Path("/usr/local/pd_tools")
-        tool_names = ("subfinder", "dnsx", "naabu", "httpx", "nuclei", "gowitness")
-        tools = {name: tool_dir / name for name in tool_names}
-        tools["nmap"] = Path("/usr/bin/nmap")
-        missing = [
-            name for name, path in tools.items()
-            if not path.is_file() or not os.access(path, os.X_OK)
+        tools = enabled_recon_tool_paths(settings)
+        tool_statuses = inspect_recon_tools(
+            probe=settings.recon_tool_probe_on_scan_start,
+            config=settings,
+        )
+        unavailable = unavailable_tool_messages(tool_statuses)
+        if unavailable:
+            raise RuntimeError(f"Unavailable scanner tools: {', '.join(unavailable)}")
+
+        chromium_status = inspect_chromium(
+            probe=settings.recon_tool_probe_on_scan_start,
+            config=settings,
+        )
+        if not chromium_status["available"]:
+            reason = chromium_status.get("error") or "unavailable"
+            raise RuntimeError(
+                f"Chromium cannot capture real screenshots: {reason}"
+            )
+        chromium = Path(chromium_status["path"])
+
+        # Progress is derived from the position of the active pipeline stage,
+        # not from hardcoded percentages. Tool names remain internal and are
+        # never exposed through the live scan status returned to the frontend.
+        pipeline_stages = [
+            "asset_discovery",
+            "dns_resolution",
+            "port_discovery",
+            "service_detection",
+            "web_analysis",
+            "vulnerability_analysis",
+            "visual_capture",
         ]
-        if missing:
-            raise RuntimeError(f"Missing scanner tools: {', '.join(missing)}")
 
-        chromium = Path("/usr/bin/chromium")
-        if not chromium.is_file():
-            raise RuntimeError("Chromium is not installed; gowitness cannot capture real screenshots")
+        additional_asset_stage_enabled = bool(
+            settings.sublist3r_enabled or settings.uncover_enabled
+        )
+        application_discovery_stage_enabled = bool(
+            settings.waybackurls_enabled
+            or settings.paramspider_enabled
+            or settings.katana_enabled
+            or settings.dirsearch_enabled
+            or settings.dirb_enabled
+            or settings.dirbuster_enabled
+            or settings.wappalyzer_enabled
+            or settings.lazyrecon_enabled
+        )
+        specialized_stage_enabled = bool(
+            settings.wpscan_enabled
+            or settings.droopescan_enabled
+            or settings.secretfinder_enabled
+            or settings.xsstrike_enabled
+            or settings.xssvibes_enabled
+            or settings.nikto_enabled
+)
 
-        stage_progress = {
-            "subfinder": 10,
-            "dnsx": 30,
-            "naabu": 40,
-            "nmap": 55,
-            "httpx": 65,
-            "nuclei": 80,
-            "nuclei template update": 75,
-            "gowitness": 90,
+        if additional_asset_stage_enabled:
+            pipeline_stages.insert(1, "additional_asset_discovery")
+        if application_discovery_stage_enabled:
+            pipeline_stages.insert(
+                pipeline_stages.index("vulnerability_analysis"),
+                "application_discovery",
+            )
+        if specialized_stage_enabled:
+            pipeline_stages.insert(
+                pipeline_stages.index("vulnerability_analysis"),
+                "specialized_assessment",
+            )
+        gemini_stage_enabled = bool(
+            settings.gemini_service_analysis_enabled
+            and settings.gemini_api_key
+            and str(settings.gemini_api_key).strip().lower() != "dummy_key"
+        )
+        if gemini_stage_enabled:
+            pipeline_stages.append("ai_service_analysis")
+
+        stage_positions = {
+            stage: position
+            for position, stage in enumerate(pipeline_stages, start=1)
         }
-
-        def run_command(command: list[str], label: str, timeout: int) -> subprocess.CompletedProcess:
+        def set_pipeline_stage(stage: str) -> None:
+            """Expose only a real stage-based percentage, never a tool name."""
+            if stage not in stage_positions:
+                return
+            progress = min(
+                99,
+                max(1, round(stage_positions[stage] * 100 / len(pipeline_stages))),
+            )
             _set_live_scan_state(
                 scan.id,
                 status="running",
-                current_tool=label,
-                progress=stage_progress.get(label, 5),
+                current_tool=None,
+                progress=progress,
             )
+
+        def complete_pipeline_stage(stage: str) -> None:
+            """Keep progress aligned with the number of pipeline stages passed."""
+            if stage not in stage_positions:
+                return
+            progress = min(
+                99,
+                max(1, round(stage_positions[stage] * 100 / len(pipeline_stages))),
+            )
+            _set_live_scan_state(
+                scan.id,
+                status="running",
+                current_tool=None,
+                progress=progress,
+            )
+
+        pipeline_warnings: list[str] = []
+
+        def run_command(
+            command: list[str],
+            label: str,
+            timeout: Optional[int],
+            *,
+            stage: Optional[str] = None,
+            continue_on_error: bool = False,
+        ) -> subprocess.CompletedProcess:
+            if stage:
+                set_pipeline_stage(stage)
             logger.info("Running %s for %s", label, domain.domain)
+            effective_timeout = timeout if timeout and timeout > 0 else None
             try:
                 result = subprocess.run(
                     command,
                     capture_output=True,
                     text=True,
-                    timeout=timeout,
+                    timeout=effective_timeout,
                     check=False,
                 )
             except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(f"{label} timed out after {timeout} seconds") from exc
+                message = (
+                    f"{label} timed out after {timeout} seconds"
+                    if effective_timeout is not None
+                    else f"{label} timed out"
+                )
+                if not continue_on_error:
+                    raise RuntimeError(message) from exc
+                logger.warning("%s; continuing the remaining pipeline", message)
+                pipeline_warnings.append(message)
+                stdout = exc.stdout or ""
+                stderr = exc.stderr or ""
+                if isinstance(stdout, bytes):
+                    stdout = stdout.decode(errors="replace")
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode(errors="replace")
+                return subprocess.CompletedProcess(command, 124, stdout, stderr)
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or "unknown error").strip()
-                raise RuntimeError(f"{label} failed: {detail[-1500:]}")
+                message = f"{label} failed: {detail[-1500:]}"
+                if not continue_on_error:
+                    raise RuntimeError(message)
+                logger.warning("%s; continuing the remaining pipeline", message)
+                pipeline_warnings.append(message)
             return result
 
         def parse_json_lines(output: str) -> list[dict]:
@@ -425,12 +550,7 @@ class DiscoveryService:
             from time import monotonic
 
             label = "subfinder"
-            _set_live_scan_state(
-                scan.id,
-                status="running",
-                current_tool=label,
-                progress=stage_progress[label],
-            )
+            set_pipeline_stage("asset_discovery")
             logger.info("Running %s for %s", label, domain.domain)
 
             process = subprocess.Popen(
@@ -516,12 +636,27 @@ class DiscoveryService:
                 ],
                 150,
             )
+            complete_pipeline_stage("asset_discovery")
             hostnames = {
                 hostname_from(line)
                 for line in subfinder_result.stdout.splitlines()
                 if hostname_from(line)
             }
             hostnames.add(target)
+
+            if additional_asset_stage_enabled:
+                set_pipeline_stage("additional_asset_discovery")
+                additional_hosts = collect_additional_subdomains(
+                    target=target,
+                    temp_path=temp_path,
+                    tools=tools,
+                    run_command=run_command,
+                )
+                for additional_host in sorted(additional_hosts):
+                    hostnames.add(additional_host)
+                    persist_live_subdomain(additional_host)
+                complete_pipeline_stage("additional_asset_discovery")
+
             hosts_file.write_text("\n".join(sorted(hostnames)) + "\n", encoding="utf-8")
 
             dnsx_result = run_command(
@@ -535,7 +670,9 @@ class DiscoveryService:
                 ],
                 "dnsx",
                 180,
+                stage="dns_resolution",
             )
+            complete_pipeline_stage("dns_resolution")
             dns_rows = parse_json_lines(dnsx_result.stdout)
 
             naabu_result = run_command(
@@ -552,7 +689,9 @@ class DiscoveryService:
                 ],
                 "naabu",
                 420,
+                stage="port_discovery",
             )
+            complete_pipeline_stage("port_discovery")
             port_rows = parse_json_lines(naabu_result.stdout)
 
             # Naabu identifies open ports quickly; Nmap then fingerprints only
@@ -573,6 +712,7 @@ class DiscoveryService:
                 entry["ports"].add(port_number)
 
             nmap_rows: list[dict[str, Any]] = []
+            set_pipeline_stage("service_detection")
             for host, nmap_target in sorted(nmap_targets.items()):
                 ports = sorted(nmap_target["ports"])
                 if not ports:
@@ -633,6 +773,7 @@ class DiscoveryService:
                         "tunnel": service_node.get("tunnel") if service_node is not None else None,
                         "cpes": cpe_values,
                     })
+            complete_pipeline_stage("service_detection")
 
             httpx_result = run_command(
                 [
@@ -645,16 +786,151 @@ class DiscoveryService:
                 ],
                 "httpx",
                 300,
+                stage="web_analysis",
             )
+            complete_pipeline_stage("web_analysis")
             http_rows = parse_json_lines(httpx_result.stdout)
             urls = sorted({
                 str(row.get("url", "")).strip()
                 for row in http_rows
                 if str(row.get("url", "")).startswith(("http://", "https://"))
             })
+
+            technologies_by_host: dict[str, set[str]] = {}
+            for row in http_rows:
+                host = hostname_from(str(row.get("url") or row.get("input") or ""))
+                if not host:
+                    continue
+                raw_technologies = row.get("tech") or []
+                if isinstance(raw_technologies, str):
+                    raw_technologies = [raw_technologies]
+                technologies_by_host.setdefault(host, set()).update(
+                    str(value).strip()
+                    for value in raw_technologies
+                    if str(value).strip()
+                )
+
+            if application_discovery_stage_enabled:
+                set_pipeline_stage("application_discovery")
+                discovered_urls, additional_technologies = collect_additional_urls(
+                    target=target,
+                    initial_urls=urls,
+                    temp_path=temp_path,
+                    tools=tools,
+                    run_command=run_command,
+                )
+                for host, values in additional_technologies.items():
+                    technologies_by_host.setdefault(host, set()).update(values)
+
+                if discovered_urls:
+                    extended_urls_file = temp_path / "extended-urls.txt"
+                    extended_urls_file.write_text(
+                        "\n".join(discovered_urls) + "\n",
+                        encoding="utf-8",
+                    )
+                    extended_httpx_result = run_command(
+                        [
+                            str(tools["httpx"]),
+                            "-l",
+                            str(extended_urls_file),
+                            "-status-code",
+                            "-title",
+                            "-tech-detect",
+                            "-ip",
+                            "-json",
+                            "-silent",
+                            "-timeout",
+                            "10",
+                            "-retries",
+                            "1",
+                            "-rate-limit",
+                            "50",
+                        ],
+                        "discovered URL validation",
+                        600,
+                        continue_on_error=True,
+                    )
+                    merged_http_rows: dict[str, dict[str, Any]] = {}
+                    for row in [*http_rows, *parse_json_lines(extended_httpx_result.stdout)]:
+                        row_url = str(row.get("url") or "").strip()
+                        if row_url:
+                            merged_http_rows[row_url] = row
+                    http_rows = list(merged_http_rows.values())
+
+                complete_pipeline_stage("application_discovery")
+
+            for row in http_rows:
+                host = hostname_from(str(row.get("url") or row.get("input") or ""))
+                if not host:
+                    continue
+                raw_technologies = row.get("tech") or []
+                if isinstance(raw_technologies, str):
+                    raw_technologies = [raw_technologies]
+                technologies_by_host.setdefault(host, set()).update(
+                    str(value).strip()
+                    for value in raw_technologies
+                    if str(value).strip()
+                )
+
+            urls = sorted({
+                str(row.get("url", "")).strip()
+                for row in http_rows
+                if str(row.get("url", "")).startswith(("http://", "https://"))
+            })
+
+            specialized_vulnerability_rows: list[dict[str, Any]] = []
+            secret_rows: list[dict[str, Any]] = []
+            if specialized_stage_enabled:
+                set_pipeline_stage("specialized_assessment")
+                if urls:
+                    (
+                        specialized_vulnerability_rows,
+                        secret_rows,
+                        specialized_technologies,
+                    ) = run_specialized_assessments(
+                        target=target,
+                        urls=urls,
+                        technologies_by_host=technologies_by_host,
+                        temp_path=temp_path,
+                        tools=tools,
+                        run_command=run_command,
+                    )
+                    for host, values in specialized_technologies.items():
+                        technologies_by_host.setdefault(host, set()).update(values)
+                complete_pipeline_stage("specialized_assessment")
+
+            # Merge all factual technology labels into the HTTP rows that are
+            # later persisted on each responsive subdomain.
+            for row in http_rows:
+                host = hostname_from(str(row.get("url") or row.get("input") or ""))
+                if not host:
+                    continue
+                existing = row.get("tech") or []
+                if isinstance(existing, str):
+                    existing = [existing]
+                merged = {str(value).strip() for value in existing if str(value).strip()}
+                merged.update(technologies_by_host.get(host, set()))
+                row["tech"] = sorted(merged)
+
             urls_file.write_text("\n".join(urls) + ("\n" if urls else ""), encoding="utf-8")
 
+            # Screenshots are captured once per responsive origin, not for every
+            # archived/crawled path. This prevents endpoint discovery from
+            # producing thousands of duplicate screenshots.
+            screenshot_urls = sorted({
+                f"{parsed.scheme}://{parsed.netloc}"
+                for value in urls
+                if (parsed := urlparse(value)).scheme in {"http", "https"}
+                and parsed.netloc
+            })[:100]
+            screenshot_urls_file = temp_path / "screenshot-urls.txt"
+            screenshot_urls_file.write_text(
+                "\n".join(screenshot_urls) + ("\n" if screenshot_urls else ""),
+                encoding="utf-8",
+            )
+
             nuclei_rows: list[dict] = []
+            set_pipeline_stage("vulnerability_analysis")
             if urls:
                 template_dir = Path("/home/appuser/nuclei-templates")
                 template_dir.mkdir(parents=True, exist_ok=True)
@@ -667,31 +943,44 @@ class DiscoveryService:
                         ],
                         "nuclei template update",
                         420,
+                        continue_on_error=True,
                     )
-                nuclei_result = run_command(
-                    [
-                        str(tools["nuclei"]),
-                        "-l", str(urls_file),
-                        "-templates", str(template_dir),
-                        "-severity", "critical,high,medium,low,info",
-                        "-jsonl", "-silent",
-                        "-timeout", "10",
-                        "-retries", "1",
-                        "-rate-limit", "50",
-                        "-disable-update-check",
-                    ],
-                    "nuclei",
-                    900,
-                )
-                nuclei_rows = parse_json_lines(nuclei_result.stdout)
+                if any(template_dir.rglob("*.yaml")):
+                    nuclei_result = run_command(
+                        [
+                            str(tools["nuclei"]),
+                            "-l", str(urls_file),
+                            "-templates", str(template_dir),
+                            "-severity", "critical,high,medium,low,info",
+                            "-jsonl", "-silent",
+                            "-timeout", "10",
+                            "-retries", "1",
+                            "-rate-limit", "100",
+                            "-concurrency","35",
+                            "-bulk-size","35",
+                            "-disable-update-check",
+                        ],
+                        "nuclei",
+                        settings.nuclei_scan_timeout_seconds,
+                        continue_on_error=True,
+                    )
+                    # TimeoutExpired includes output produced before the process
+                    # was stopped, so real findings are not discarded.
+                    nuclei_rows = parse_json_lines(nuclei_result.stdout)
+                else:
+                    message = "nuclei skipped because no templates are available"
+                    logger.warning(message)
+                    pipeline_warnings.append(message)
+            complete_pipeline_stage("vulnerability_analysis")
 
             gowitness_rows: list[dict] = []
-            if urls:
+            set_pipeline_stage("visual_capture")
+            if screenshot_urls:
                 run_command(
                     [
                         str(tools["gowitness"]),
                         "scan", "file",
-                        "-f", str(urls_file),
+                        "-f", str(screenshot_urls_file),
                         "-s", str(screenshot_dir),
                         "--write-jsonl",
                         "--write-jsonl-file", str(gowitness_jsonl),
@@ -701,15 +990,24 @@ class DiscoveryService:
                     ],
                     "gowitness",
                     420,
+                    continue_on_error=True,
                 )
                 if gowitness_jsonl.exists():
                     gowitness_rows = parse_json_lines(gowitness_jsonl.read_text(encoding="utf-8"))
+            complete_pipeline_stage("visual_capture")
 
             _set_live_scan_state(
                 scan.id,
                 status="running",
-                current_tool="persisting results",
-                progress=95,
+                current_tool=None,
+                progress=min(
+                    99,
+                    round(
+                        stage_positions["visual_capture"]
+                        * 100
+                        / len(pipeline_stages)
+                    ),
+                ),
             )
 
             # Replace the prior enriched result set only after every scanner
@@ -794,6 +1092,28 @@ class DiscoveryService:
                     record_value=record_value,
                 ))
 
+            seen_secret_rows: set[tuple[str, str, str]] = set()
+            for row in secret_rows:
+                host = hostname_from(str(row.get("host") or ""))
+                subdomain = subdomain_by_name.get(host)
+                secret_type = str(row.get("secret_type") or "CLIENT_SIDE_SECRET_PATTERN")[:100]
+                location = str(row.get("location") or "")[:255]
+                identity = (host, secret_type, location)
+                if not subdomain or not location or identity in seen_secret_rows:
+                    continue
+                seen_secret_rows.add(identity)
+                try:
+                    confidence = float(row.get("confidence") or 0.0)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                self.db.add(Secret(
+                    subdomain_id=subdomain.id,
+                    secret_type=secret_type,
+                    secret_location=location,
+                    confidence=max(0.0, min(1.0, confidence)),
+                    is_active=True,
+                ))
+
             service_by_host_port: dict[tuple[str, int], Service] = {}
 
             def ensure_service(
@@ -848,13 +1168,25 @@ class DiscoveryService:
                 service_by_host_port[key] = service
                 return service
 
+            nmap_services_for_ai: list[dict[str, Any]] = []
             for row in nmap_rows:
-                ensure_service(
+                service = ensure_service(
                     row["host"],
                     row["port"],
                     row.get("protocol") or "TCP",
                     row,
                 )
+                if service:
+                    nmap_services_for_ai.append({
+                        "service_id": service.id,
+                        "host": row["host"],
+                        "port": row["port"],
+                        "protocol": row.get("protocol") or "TCP",
+                        "service_name": service.service_name,
+                        "product": service.product,
+                        "version": service.version,
+                        "cpes": row.get("cpes") or [],
+                    })
 
             for row in port_rows:
                 host = hostname_from(str(row.get("input") or row.get("host") or ""))
@@ -872,9 +1204,59 @@ class DiscoveryService:
                 ensure_service(host, port_number)
 
             vulnerabilities_created = 0
-            severity_risk = {"critical": 95, "high": 80, "medium": 55, "low": 25, "info": 5}
+            severity_risk = {"critical": 95, "high": 80, "medium": 55, "low": 25, "info": 0}
             highest_risk = 0
             seen_vulnerabilities: set[tuple[str, str, str]] = set()
+
+            for row in specialized_vulnerability_rows:
+                matched_at = str(row.get("matched_at") or "")
+                parsed_match = urlparse(
+                    matched_at if "://" in matched_at else f"//{matched_at}"
+                )
+                host = (parsed_match.hostname or hostname_from(matched_at)).lower()
+                port_number = parsed_match.port or (
+                    443 if parsed_match.scheme == "https" else 80
+                )
+                service = ensure_service(host, port_number)
+                if not service:
+                    continue
+
+                title = str(row.get("title") or "Security assessment finding")[:255]
+                identity = (
+                    str(row.get("cve_id") or ""),
+                    matched_at,
+                    title,
+                )
+                if identity in seen_vulnerabilities:
+                    continue
+                seen_vulnerabilities.add(identity)
+
+                severity = str(row.get("severity") or "info").lower()
+                if severity not in severity_risk:
+                    severity = "info"
+                raw_cvss = row.get("cvss_score")
+                try:
+                    cvss_score = float(raw_cvss) if raw_cvss is not None else None
+                except (TypeError, ValueError):
+                    cvss_score = None
+
+                self.db.add(Vulnerability(
+                    service_id=service.id,
+                    cve_id=(str(row.get("cve_id"))[:50] if row.get("cve_id") else None),
+                    title=title,
+                    description=str(row.get("description") or "") or None,
+                    severity=severity.capitalize(),
+                    cvss_score=cvss_score,
+                    cvss_vector=None,
+                ))
+                vulnerabilities_created += 1
+                highest_risk = max(
+                    highest_risk,
+                    round(cvss_score * 10)
+                    if cvss_score is not None
+                    else severity_risk.get(severity, 0),
+                )
+
             for row in nuclei_rows:
                 info = row.get("info") or {}
                 matched_at = str(row.get("matched-at") or row.get("host") or "")
@@ -964,9 +1346,57 @@ class DiscoveryService:
                     is_valid=1,
                 ))
 
+            # Commit factual scanner output before optional external AI
+            # enrichment. A Gemini outage must never discard Nmap/Nuclei data.
             self.db.commit()
+
+            ai_actionable_count = 0
+            if gemini_stage_enabled:
+                set_pipeline_stage("ai_service_analysis")
+
+            if gemini_stage_enabled and nmap_services_for_ai:
+                try:
+                    from app.services.gemini_service_assessment import (
+                        GeminiServiceVersionAnalyzer,
+                    )
+
+                    analyzer = GeminiServiceVersionAnalyzer(self.db)
+                    try:
+                        ai_result = analyzer.analyze_and_persist(
+                            scan.id,
+                            nmap_services_for_ai,
+                        )
+                    finally:
+                        analyzer.close()
+                    ai_actionable_count = int(ai_result.get("actionable_count") or 0)
+                    pipeline_warnings.extend(ai_result.get("warnings") or [])
+                    logger.info(
+                        "Gemini service-version analysis for scan %s assessed %s service(s); %s actionable",
+                        scan.id,
+                        int(ai_result.get("assessed_count") or 0),
+                        ai_actionable_count,
+                    )
+                    for severity, count in (ai_result.get("severity_counts") or {}).items():
+                        if count:
+                            highest_risk = max(
+                                highest_risk,
+                                severity_risk.get(str(severity).lower(), 0),
+                            )
+                except Exception as exc:
+                    # Scanner results are already committed. Roll back only the
+                    # incomplete AI transaction and finish with a warning.
+                    self.db.rollback()
+                    logger.exception("Gemini service-version analysis failed")
+                    pipeline_warnings.append(
+                        f"Gemini service-version analysis failed: {str(exc)[:500]}"
+                    )
+
+            if gemini_stage_enabled:
+                complete_pipeline_stage("ai_service_analysis")
+
             return {
                 "discovered_count": len(subdomain_by_name),
-                "vulnerable_count": vulnerabilities_created,
+                "vulnerable_count": vulnerabilities_created + ai_actionable_count,
                 "risk_score": min(100, highest_risk),
+                "warnings": pipeline_warnings,
             }

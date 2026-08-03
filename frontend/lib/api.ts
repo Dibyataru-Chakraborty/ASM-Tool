@@ -47,6 +47,30 @@ export const asm = {
   getScanTools: (id: string) => client.get(`/api/v1/scans/${id}/tools`).then(r => r.data),
   getScanLogs:  (id: string, since?: string) => client.get(`/api/v1/scans/${id}/logs`, { params: since ? { since_id: since } : {} }).then(r => r.data),
   cancelScan:   (id: string) => client.post(`/api/v1/scans/${id}/cancel`).then(r => r.data),
+  deleteScan:   (id: string) => client.delete(`/api/v1/scans/${id}`).then(r => r.data),
+  
+  // Real Recon results
+  getReconStatus: (scanId: string) => client.get(`/api/v1/recon/status/${scanId}`).then(r => r.data),
+  getReconSubdomains: (domainId: string, scanId?: string) => client.get(
+    '/api/v1/recon/subdomains',
+    { params: { domain_id: domainId, ...(scanId ? { scan_id: scanId } : {}) } },
+  ).then(r => r.data),
+  getReconIPs: (domainId: string) => client.get(
+    '/api/v1/recon/ips',
+    { params: { domain_id: domainId } },
+  ).then(r => r.data),
+  getReconVulnerabilities: (domainId: string) => client.get(
+    '/api/v1/recon/vulnerabilities',
+    { params: { domain_id: domainId } },
+  ).then(r => r.data),
+  getReconAIServiceAssessments: (scanId: string) => client.get(
+    '/api/v1/recon/ai-service-assessments',
+    { params: { scan_id: scanId } },
+  ).then(r => r.data),
+  getReconScreenshots: (domainId: string) => client.get(
+    '/api/v1/recon/screenshots',
+    { params: { domain_id: domainId } },
+  ).then(r => r.data),
 
   // Vulnerabilities
   getVulns:     (p?: any) => client.get('/api/v1/vulnerabilities', { params: p }).then(r => r.data),

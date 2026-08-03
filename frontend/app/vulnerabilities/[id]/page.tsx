@@ -48,7 +48,6 @@ function VulnDetailPageInner({ params }: { params: Promise<{ id: string }> }) {
               {vuln.cvss_score && <span className="tag-info">CVSS {vuln.cvss_score.toFixed(1)}</span>}
               {vuln.cve_id && <span className="text-xs font-mono text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">{vuln.cve_id}</span>}
               {vuln.cwe_id && <span className="text-xs font-mono text-gray-400 bg-gray-500/10 border border-gray-500/20 px-2 py-0.5 rounded">{vuln.cwe_id}</span>}
-              {vuln.source_tool && <span className="tag-info">{vuln.source_tool}</span>}
             </div>
           </div>
           {vuln.is_false_positive && <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-1 rounded">False Positive</span>}

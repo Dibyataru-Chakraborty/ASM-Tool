@@ -12,11 +12,6 @@ const SEV_CLS: Record<string,string> = {
 const STATUS_CLS: Record<string,string> = {
   running:'text-blue-400',queued:'text-yellow-400',completed:'text-green-400',failed:'text-red-400',cancelled:'text-gray-500'
 }
-const TOOL_ICONS: Record<string,string> = {
-  subfinder:'🌐',dnsx:'🔍',httpx:'🌍',naabu:'🚪',nmap:'🗺️',
-  katana:'🕷️',dirsearch:'📁',nuclei:'⚡',xsstrike:'💉',gowitness:'📸',report:'📄'
-}
-
 export default function Dashboard() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -89,12 +84,7 @@ export default function Dashboard() {
                     <span className="text-sm font-mono text-gray-200 truncate">{job.asset_target}</span>
                     <span className={`text-xs ${STATUS_CLS[job.status]}`}>● {job.status}</span>
                   </div>
-                  {job.current_tool && (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <span>{TOOL_ICONS[job.current_tool]||'🔧'}</span>
-                      <span>Running: {job.current_tool}</span>
-                    </div>
-                  )}
+                  <p className="text-xs text-gray-500">Scan in progress</p>
                   {/* Progress bar */}
                   <div className="mt-2 h-1 bg-[#21262d] rounded-full overflow-hidden">
                     <div className="h-full bg-blue-500 transition-all duration-500 rounded-full" style={{width:`${job.progress||0}%`}} />

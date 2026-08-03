@@ -8,11 +8,14 @@ import {
   Globe2,
   History,
   LayoutDashboard,
+  Moon,
   Server,
   Settings,
   Shield,
+  Sun,
   type LucideIcon,
 } from 'lucide-react'
+import { useTheme } from '@/lib/theme'
 
 const TITLES: Record<string, { label: string; icon: LucideIcon }> = {
   '/dashboard':       { label: 'Dashboard',            icon: LayoutDashboard },
@@ -28,6 +31,7 @@ const TITLES: Record<string, { label: string; icon: LucideIcon }> = {
 
 export default function Topbar() {
   const path = usePathname()
+  const { theme, toggleTheme } = useTheme()
   const title = Object.entries(TITLES).find(([k]) => path === k || path.startsWith(k + '/'))?.[1]
     || { label: 'ASM Platform', icon: Shield }
   const Icon = title.icon
@@ -39,6 +43,17 @@ export default function Topbar() {
         <span>{title.label}</span>
       </h1>
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="theme-toggle"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark'
+            ? <Sun className="h-4 w-4" aria-hidden="true" />
+            : <Moon className="h-4 w-4" aria-hidden="true" />}
+        </button>
         <span className="text-[10px] text-gray-600">AI</span>
         <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">Gemini 1.5 Pro</span>
       </div>

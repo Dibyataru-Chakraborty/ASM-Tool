@@ -12,6 +12,7 @@ from app.models.ssl_certificate import SSLCertificate
 from app.models.screenshot import Screenshot
 from app.models.scan import Scan
 from app.models.scan_schedule import ScanSchedule
+from app.models.ai_service_assessment import AIServiceAssessment
 
 # Phase 2-3: Port Scanning, Service Detection, Vulnerability
 from app.models.phase2 import Port, Service, Banner, Technology, OSDetection, Vulnerability
@@ -36,6 +37,7 @@ __all__ = [
     "Screenshot",
     "Scan",
     "ScanSchedule",
+    "AIServiceAssessment",
     # Phase 2-3
     "Port",
     "Service",

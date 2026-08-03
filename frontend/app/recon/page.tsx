@@ -59,7 +59,6 @@ type ScanStatus = {
   domain_id: string | null
   domain: string
   summary: { discoveries: number; vulnerabilities: number }
-  current_tool?: string | null
   progress?: number
   live_subdomains?: string[]
   error?: string | null
@@ -78,13 +77,13 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ]
 
 const PIPELINE = [
-  { tool: 'subfinder', description: 'Subdomain enumeration' },
-  { tool: 'dnsx', description: 'DNS resolution to exact IPs' },
-  { tool: 'naabu', description: 'Top-port TCP scanning' },
-  { tool: 'nmap', description: 'Service and version detection on open ports' },
-  { tool: 'httpx', description: 'HTTP status and technology detection' },
-  { tool: 'nuclei', description: 'Template-based vulnerability scanning' },
-  { tool: 'gowitness', description: 'Chromium screenshots' },
+  { stage: 'Asset discovery', description: 'Identify valid hosts for the selected target' },
+  { stage: 'DNS resolution', description: 'Resolve discovered hosts to exact IP addresses' },
+  { stage: 'Port discovery', description: 'Identify reachable network ports' },
+  { stage: 'Service identification', description: 'Detect exposed services and versions' },
+  { stage: 'Web analysis', description: 'Collect response and technology information' },
+  { stage: 'Vulnerability analysis', description: 'Evaluate confirmed scanner evidence' },
+  { stage: 'Visual capture', description: 'Capture available web interfaces' },
 ]
 
 function CopyValue({ value }: { value: string }) {
@@ -351,6 +350,8 @@ function ReconContent() {
   const toolStatuses = providers?.projectdiscovery_tools
     ? Object.entries(providers.projectdiscovery_tools) as [string, any][]
     : []
+  const availableScannerServices = toolStatuses.filter(([, state]) => state.available).length
+  const totalScannerServices = toolStatuses.length
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
@@ -361,24 +362,25 @@ function ReconContent() {
             <h1 className="text-lg font-bold text-gray-100">Recon Engine</h1>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Real pipeline: subfinder → dnsx → naabu → nmap → httpx → nuclei → gowitness
+            Real multi-stage reconnaissance with live stage-based progress.
           </p>
         </div>
 
         <div className="flex max-w-2xl flex-wrap justify-end gap-1.5">
-          {toolStatuses.map(([name, state]) => (
+          {totalScannerServices > 0 && (
             <span
-              key={name}
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${
-                state.available
+                availableScannerServices === totalScannerServices
                   ? 'border-green-500/20 bg-green-500/10 text-green-400'
                   : 'border-red-500/20 bg-red-500/10 text-red-400'
               }`}
             >
-              {state.available ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-              {name}
+              {availableScannerServices === totalScannerServices
+                ? <CheckCircle2 className="h-3 w-3" />
+                : <XCircle className="h-3 w-3" />}
+              Scanner services: {availableScannerServices}/{totalScannerServices} ready
             </span>
-          ))}
+          )}
           {providers && (
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] ${
@@ -390,7 +392,7 @@ function ReconContent() {
               {providers.browser?.chromium?.available
                 ? <CheckCircle2 className="h-3 w-3" />
                 : <XCircle className="h-3 w-3" />}
-              Chromium
+              Capture service
             </span>
           )}
         </div>
@@ -484,7 +486,7 @@ function ReconContent() {
               <div>
                 <h2 className="text-sm font-semibold text-gray-200">Full Recon Pipeline</h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Results are saved only from tool output. A tool failure marks the scan failed.
+                  Results are saved only from real scanner output. A failed required stage marks the scan failed.
                 </p>
               </div>
               <ShieldCheck className="h-5 w-5 text-green-400" />
@@ -492,10 +494,10 @@ function ReconContent() {
 
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {PIPELINE.map((step, index) => (
-                <div key={step.tool} className="flex gap-3 rounded-lg border border-[#21262d] bg-[#0d1117] p-3">
+                <div key={step.stage} className="flex gap-3 rounded-lg border border-[#21262d] bg-[#0d1117] p-3">
                   <span className="text-xs font-bold text-blue-400">{index + 1}.</span>
                   <div>
-                    <p className="font-mono text-xs text-gray-200">{step.tool}</p>
+                    <p className="text-xs font-medium text-gray-200">{step.stage}</p>
                     <p className="mt-1 text-[11px] text-gray-500">{step.description}</p>
                   </div>
                 </div>
@@ -587,7 +589,7 @@ function ReconContent() {
                 </div>
                 <div className="rounded-lg border border-[#21262d] bg-[#0d1117] p-4">
                   <p className="text-xl font-bold text-red-400">{taskStatus.summary.vulnerabilities || 0}</p>
-                  <p className="mt-1 text-xs text-gray-500">Real nuclei findings</p>
+                  <p className="mt-1 text-xs text-gray-500">Confirmed findings</p>
                 </div>
               </div>
 
@@ -595,19 +597,23 @@ function ReconContent() {
                 <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 p-3 text-xs text-blue-300">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span>
-                    {taskStatus.current_tool
-                      ? `${taskStatus.current_tool} is running`
-                      : 'Scanner pipeline is running'}
-                    {' · '}
-                    {taskStatus.progress ?? 0}% · refreshes every three seconds.
+                    Scan in progress · {taskStatus.progress ?? 0}% · refreshes every three seconds.
                   </span>
                 </div>
               )}
               {taskStatus.status === 'completed' && (
-                <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-xs text-green-300">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Scan completed. The result tabs now show persisted tool output.
-                </div>
+                <>
+                  <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-xs text-green-300">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Scan completed. The result tabs now show persisted scan output.
+                  </div>
+                  {taskStatus.error && (
+                    <div className="flex items-start gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>Completed with warning: {taskStatus.error}</span>
+                    </div>
+                  )}
+                </>
               )}
               {taskStatus.status === 'failed' && (
                 <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
@@ -626,9 +632,7 @@ function ReconContent() {
             <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-xs text-blue-300">
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {taskStatus.current_tool
-                  ? `${taskStatus.current_tool} is running`
-                  : 'Preparing the scanner pipeline'}
+                Scan in progress
               </span>
               <span>{taskStatus.progress ?? 0}% · live refresh every 3s</span>
             </div>
@@ -640,10 +644,10 @@ function ReconContent() {
           onRefresh={() => void openResults('subdomains')}
           empty={
             taskStatus && ['pending', 'running'].includes(taskStatus.status)
-              ? 'Subfinder is running. New subdomains will appear here automatically.'
+              ? 'Asset discovery is in progress. New hosts will appear here automatically.'
               : 'No persisted subdomains from a real scan.'
           }
-          headers={['Subdomain', 'IP addresses', 'Open ports', 'Nmap services', 'HTTP', 'TLS', 'Technologies']}
+          headers={['Subdomain', 'IP addresses', 'Open ports', 'Detected services', 'HTTP', 'TLS', 'Technologies']}
           rows={subdomains.map(item => [
             <code key="host" className="text-blue-400">{item.subdomain}</code>,
             <span key="ips" className="font-mono text-gray-300">{(item.ip_addresses || []).join(', ') || '—'}</span>,
@@ -656,7 +660,7 @@ function ReconContent() {
               )).join(', ') || '—'}
             </span>,
             <span key="http" className={item.is_responsive ? 'text-green-400' : 'text-gray-600'}>
-              {item.is_responsive ? item.response_status_code || 'Live' : 'Awaiting httpx'}
+              {item.is_responsive ? item.response_status_code || 'Live' : 'Awaiting web analysis'}
             </span>,
             <span key="tls" className={item.has_ssl ? 'text-green-400' : 'text-gray-600'}>
               {item.has_ssl ? 'Yes' : 'No'}
@@ -685,11 +689,11 @@ function ReconContent() {
 
       {tab === 'vulns' && (
         <ResultTable
-          title="Nuclei vulnerability findings"
+          title="Confirmed vulnerability findings"
           icon={Bug}
           count={vulnerabilities.length}
           onRefresh={() => void openResults('vulns')}
-          empty="No real nuclei findings are stored for this domain."
+          empty="No confirmed vulnerability findings are stored for this domain."
           headers={['CVE', 'Finding', 'Target', 'Severity', 'CVSS']}
           rows={vulnerabilities.map(item => [
             <code key="cve" className="text-blue-400">{item.cve_id || '—'}</code>,
@@ -712,7 +716,7 @@ function ReconContent() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Camera className="h-4 w-4 text-blue-400" />
-              <h2 className="text-sm font-semibold text-gray-200">Gowitness screenshots</h2>
+              <h2 className="text-sm font-semibold text-gray-200">Captured screenshots</h2>
               <span className="text-xs text-blue-400">{screenshots.length}</span>
             </div>
             <button

@@ -176,7 +176,7 @@ function ReportDetailPageInner({ params }: { params: Promise<{ id: string }> }) 
           ) : (
             <table className="w-full text-xs">
               <thead><tr className="border-b border-[#21262d]">
-                {['Title','Severity','CVSS','CVE','Host','Tool'].map(h => (
+                {['Title','Severity','CVSS','CVE','Host'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium uppercase tracking-wide">{h}</th>
                 ))}
               </tr></thead>
@@ -194,7 +194,6 @@ function ReportDetailPageInner({ params }: { params: Promise<{ id: string }> }) 
                     </td>
                     <td className="px-4 py-2.5 font-mono text-blue-400 text-[10px]">{v.cve_id || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-gray-400 truncate max-w-[120px]">{v.host || '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{v.source_tool || '—'}</td>
                   </tr>
                 ))}
               </tbody>

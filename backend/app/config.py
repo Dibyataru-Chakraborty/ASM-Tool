@@ -61,6 +61,85 @@ class Settings(BaseSettings):
     scheduler_poll_seconds: int = 15
     max_concurrent_scans: int = 5
 
+    # Real scanner process limits. Set NUCLEI_SCAN_TIMEOUT_SECONDS=0 to let
+    # Nuclei run without an overall process deadline.
+    nuclei_scan_timeout_seconds: int = 7200
+    
+    nuclei_rate_limit: int = 100
+    nuclei_concurrency: int = 35
+    nuclei_bulk_size: int = 35
+    nuclei_request_timeout: int = 10
+    nuclei_retries: int = 1
+    # Scanner executable locations and startup validation. The installer and
+    # backend mount the same named volume at pd_tools_path, which keeps virtual
+    # environment shebangs valid across both containers and across rebuilds.
+    pd_tools_path: str = "/usr/local/pd_tools"
+    nmap_path: str = "/usr/bin/nmap"
+    chromium_path: str = "/usr/bin/chromium"
+    recon_tool_probe_on_scan_start: bool = True
+    recon_tool_probe_timeout_seconds: int = 15
+
+    # Extended reconnaissance tools. Passive and low-impact discovery tools are
+    # enabled by default. Duplicate, legacy, API-dependent, or active testing
+    # tools remain opt-in so a normal recon scan does not overload the target.
+    sublist3r_enabled: bool = True
+    uncover_enabled: bool = True
+    uncover_engine: str = "shodan-idb"
+    uncover_limit: int = 50
+
+    waybackurls_enabled: bool = True
+    katana_enabled: bool = True
+    katana_depth: int = 2
+    paramspider_enabled: bool = True
+    max_discovered_urls: int = 2000
+
+    dirsearch_enabled: bool = True
+    dirsearch_max_targets: int = 5
+    dirsearch_timeout_seconds: int = 240
+    dirsearch_max_rate: int = 20
+
+    dirb_enabled: bool = False
+    dirb_max_targets: int = 3
+    dirbuster_enabled: bool = False
+    dirbuster_max_targets: int = 2
+
+    wappalyzer_enabled: bool = True
+    wappalyzer_max_targets: int = 20
+
+    wpscan_enabled: bool = True
+    wpscan_api_token: Optional[str] = None
+    wpscan_max_targets: int = 5
+    wpscan_timeout_seconds: int = 600
+
+    droopescan_enabled: bool = True
+    droopescan_max_targets: int = 5
+    droopescan_timeout_seconds: int = 300
+
+    secretfinder_enabled: bool = True
+    secretfinder_max_javascript_urls: int = 30
+
+    # XSStrike sends active payloads. Keep disabled unless the user has explicit
+    # authorization for active application testing.
+    xsstrike_enabled: bool = False
+    xsstrike_max_targets: int = 10
+    xsstrike_timeout_seconds: int = 180
+    
+    # xss_vibes sends active reflected-XSS test payloads.
+    xssvibes_enabled: bool = False
+    xssvibes_max_targets: int = 20
+    xssvibes_threads: int = 5
+    xssvibes_timeout_seconds: int = 300
+
+    # Nikto performs active web-server security checks.
+    nikto_enabled: bool = False
+    nikto_max_targets: int = 5
+    nikto_timeout_seconds: int = 420
+
+    # LazyRecon is a meta-wrapper around tools already present in this pipeline.
+    # It can require root/masscan and is therefore installed but disabled here.
+    lazyrecon_enabled: bool = False
+    lazyrecon_timeout_seconds: int = 1800
+
     # Rate Limiting
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 100  # requests per window
@@ -87,6 +166,11 @@ class Settings(BaseSettings):
     claude_api_key: Optional[str] = None  # Anthropic Claude
     openai_api_key: Optional[str] = None  # OpenAI GPT-4
     gemini_api_key: Optional[str] = None  # Google Gemini
+    gemini_service_analysis_enabled: bool = True
+    gemini_service_model: str = "gemini-3.6-flash"
+    gemini_service_batch_size: int = 8
+    gemini_service_max_unique_services: int = 50
+    gemini_service_timeout_seconds: int = 120
     cohere_api_key: Optional[str] = None  # Cohere
     
     # Threat Intelligence APIs (Phase 4)

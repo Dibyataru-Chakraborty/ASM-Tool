@@ -11,11 +11,27 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    bash \
     gcc \
     ca-certificates \
     chromium \
+    curl \
+    default-jre-headless \
+    dirb \
+    libcurl4 \
+    libffi8 \
+    libssl3 \
+    libxml2 \
+    libxslt1.1 \
+    nodejs \
     nmap \
+    perl \
+    libio-socket-ssl-perl \
+    libjson-pp-perl \
+    libnet-ssleay-perl \
+    libxml-writer-perl \
     postgresql-client \
+    ruby \
     libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
 

@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     scheduler_poll_seconds: int = 15
     max_concurrent_scans: int = 5
 
+    # Immutable, compact historical snapshots. This directory is mounted as a
+    # dedicated Docker volume and files are never removed automatically.
+    scan_archive_dir: str = "/app/scan_archives"
+    scan_archive_compression_level: int = 9
+
     # Real scanner process limits. Set NUCLEI_SCAN_TIMEOUT_SECONDS=0 to let
     # Nuclei run without an overall process deadline.
     nuclei_scan_timeout_seconds: int = 7200
@@ -70,6 +75,12 @@ class Settings(BaseSettings):
     nuclei_bulk_size: int = 35
     nuclei_request_timeout: int = 10
     nuclei_retries: int = 1
+    # Scan origins first, then a bounded number of discovered endpoints. A
+    # full URL corpus multiplied by every template can take many hours.
+    nuclei_max_targets: int = 100
+    # Informational templates identify technologies/configuration observations,
+    # not actionable vulnerabilities. They remain opt-in.
+    nuclei_include_info_findings: bool = False
     # Scanner executable locations and startup validation. The installer and
     # backend mount the same named volume at pd_tools_path, which keeps virtual
     # environment shebangs valid across both containers and across rebuilds.

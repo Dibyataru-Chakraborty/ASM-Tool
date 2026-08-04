@@ -98,20 +98,29 @@ class OSDetection(Base, TimestampMixin):
 
 
 class Vulnerability(Base, TimestampMixin):
-    """Phase 3: Vulnerability from CVE database."""
+    """A factual scanner finding retained as part of a scan's history."""
     __tablename__ = "vulnerabilities"
     
     id = Column(String(36), primary_key=True, default=get_uuid)
+    scan_id = Column(String(36), ForeignKey("scans.id", ondelete="CASCADE"), nullable=True)
     cve_id = Column(String(50), nullable=True)
-    service_id = Column(String(36), ForeignKey("services.id", ondelete="CASCADE"), nullable=True)
+    # Services are refreshed on each recon run. Keep the historical finding
+    # when that live inventory row is replaced.
+    service_id = Column(String(36), ForeignKey("services.id", ondelete="SET NULL"), nullable=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     severity = Column(String(20), nullable=True)  # Critical, High, Medium, Low
     cvss_score = Column(Float, nullable=True)
     cvss_vector = Column(String(255), nullable=True)
     published_date = Column(String, nullable=True)
+    host = Column(String(255), nullable=True)
+    port = Column(Integer, nullable=True)
+    matched_at = Column(Text, nullable=True)
+    source = Column(String(50), nullable=True)
+    is_false_positive = Column(Boolean, nullable=False, default=False)
     
     __table_args__ = (
         Index("idx_vuln_cve", "cve_id"),
+        Index("idx_vuln_scan", "scan_id"),
         Index("idx_vuln_service", "service_id"),
     )

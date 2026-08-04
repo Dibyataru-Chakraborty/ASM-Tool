@@ -151,8 +151,25 @@ async def delete_asset(
 ):
     """Delete an asset."""
     try:
+        from app.models import Scan
+        from app.services.scan_archive_service import ScanArchiveService
+
+        scan_ids = [
+            scan_id
+            for (scan_id,) in db.query(Scan.id).filter(Scan.asset_id == asset_id).all()
+        ]
         service = AssetService(db)
         service.delete_asset(asset_id, current_user.id)
+        archive_service = ScanArchiveService()
+        for scan_id in scan_ids:
+            try:
+                archive_service.delete_archive(current_user.id, scan_id)
+            except Exception:
+                logger.exception(
+                    "Asset %s was deleted but scan archive %s cleanup failed",
+                    asset_id,
+                    scan_id,
+                )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     except ValidationError as e:

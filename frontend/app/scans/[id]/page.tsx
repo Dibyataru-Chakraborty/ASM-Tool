@@ -70,7 +70,9 @@ type ReconVulnerability = {
   severity?: string | null
   cvss_score?: number | null
   subdomain: string
-  port: number
+  port?: number | null
+  source?: string | null
+  category?: 'vulnerability' | 'observation' | string
 }
 
 type AIServiceAssessment = {
@@ -270,6 +272,25 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
   const loadResults = useCallback(async () => {
     setResultsLoading(true)
     try {
+      try {
+        const archive = await asm.getScanArchive(id)
+        if (archive?.domain_id) {
+          setResults({
+            domainId: archive.domain_id,
+            subdomains: archive.subdomains || [],
+            ips: archive.ips || [],
+            vulnerabilities: archive.vulnerabilities || [],
+            aiAssessments: archive.ai_assessments || [],
+            screenshots: archive.screenshots || [],
+          })
+          setResultsError('')
+          return
+        }
+      } catch {
+        // Older/active installations can still use the canonical database
+        // endpoints while a missing archive is backfilled.
+      }
+
       const statusResponse = await asm.getReconStatus(id)
       const domainId = statusResponse?.domain_id
       if (!domainId) {
@@ -287,7 +308,7 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
       ] = await Promise.all([
         asm.getReconSubdomains(domainId, id),
         asm.getReconIPs(domainId),
-        asm.getReconVulnerabilities(domainId),
+        asm.getReconVulnerabilities(domainId, id),
         asm.getReconAIServiceAssessments(id),
         asm.getReconScreenshots(domainId),
       ])
@@ -370,6 +391,12 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
       }
     })
   })
+  const actionableFindings = (results?.vulnerabilities || []).filter(
+    finding => severityKey(finding.severity) !== 'info',
+  )
+  const informationalFindings = (results?.vulnerabilities || []).filter(
+    finding => severityKey(finding.severity) === 'info',
+  )
   const severityFindings = [
     ...(results?.vulnerabilities || []),
     ...(results?.aiAssessments || []),
@@ -559,9 +586,9 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
                     color: 'text-purple-400',
                   },
                   {
-                    label: 'Confirmed findings',
-                    value: results.vulnerabilities.length,
-                    detail: 'Matched templates',
+                    label: 'Actionable findings',
+                    value: actionableFindings.length,
+                    detail: `${informationalFindings.length} informational observations`,
                     icon: Bug,
                     color: 'text-orange-400',
                   },
@@ -596,10 +623,52 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
                 <div className="card p-5">
                   <div className="mb-2">
                     <h3 className="text-sm font-semibold text-gray-100">Severity distribution</h3>
-                    <p className="mt-1 text-xs text-gray-500">Counts from confirmed findings plus grounded AI service-version assessments.</p>
+                    <p className="mt-1 text-xs text-gray-500">Actionable findings, informational observations, and grounded AI service-version assessments.</p>
                   </div>
                   <SeverityColumns findings={severityFindings} />
                 </div>
+              </div>
+
+              <div className="card overflow-hidden">
+                <div className="flex items-center justify-between border-b border-[#21262d] px-5 py-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-100">Informational observations</h3>
+                    <p className="mt-1 text-xs text-gray-500">Technology and configuration detections are evidence, but are not counted as vulnerabilities.</p>
+                  </div>
+                  <span className="text-xs font-semibold text-gray-400">{informationalFindings.length}</span>
+                </div>
+                {informationalFindings.length === 0 ? (
+                  <div className="p-4"><ResultsEmpty message="No informational observations were recorded for this scan." /></div>
+                ) : (
+                  <div className="max-h-80 overflow-auto">
+                    <table className="w-full min-w-[720px] text-xs">
+                      <thead className="sticky top-0 bg-[#161b22]">
+                        <tr className="border-b border-[#21262d]">
+                          {['Category', 'Observation', 'Source', 'Affected service'].map(header => (
+                            <th key={header} className="px-4 py-3 text-left font-medium uppercase tracking-wide text-gray-500">{header}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {informationalFindings.map(finding => (
+                          <tr key={finding.id} className="border-b border-[#21262d] align-top transition hover:bg-[#1c2128]">
+                            <td className="px-4 py-3"><SeverityBadge severity="Info" /></td>
+                            <td className="max-w-xl px-4 py-3">
+                              <p className="font-medium text-gray-300">{finding.title}</p>
+                              {finding.description && (
+                                <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-gray-500">{finding.description}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-gray-500">{finding.source || 'scanner'}</td>
+                            <td className="px-4 py-3 font-mono text-gray-400">
+                              {finding.subdomain}{finding.port != null ? `:${finding.port}` : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="card overflow-hidden">
@@ -801,14 +870,14 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
                   <div>
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-100">
                       <Bug className="h-4 w-4 text-orange-400" />
-                      Confirmed findings
+                      Actionable vulnerabilities
                     </h3>
-                    <p className="mt-1 text-xs text-gray-500">Only templates that produced persisted matcher output are listed.</p>
+                    <p className="mt-1 text-xs text-gray-500">Critical through Low scanner matches, categorized from factual tool output.</p>
                   </div>
-                  <span className="text-xs font-semibold text-orange-400">{results.vulnerabilities.length}</span>
+                  <span className="text-xs font-semibold text-orange-400">{actionableFindings.length}</span>
                 </div>
-                {results.vulnerabilities.length === 0 ? (
-                  <div className="p-4"><ResultsEmpty message="No persisted confirmed findings were recorded." /></div>
+                {actionableFindings.length === 0 ? (
+                  <div className="p-4"><ResultsEmpty message="No Critical, High, Medium, or Low scanner matches were recorded for this scan." /></div>
                 ) : (
                   <div className="max-h-[32rem] overflow-auto">
                     <table className="w-full min-w-[820px] text-xs">
@@ -820,7 +889,7 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {results.vulnerabilities.map(vulnerability => (
+                        {actionableFindings.map(vulnerability => (
                           <tr key={vulnerability.id} className="border-b border-[#21262d] align-top transition hover:bg-[#1c2128]">
                             <td className="px-4 py-3"><SeverityBadge severity={vulnerability.severity} /></td>
                             <td className="max-w-lg px-4 py-3">
@@ -830,7 +899,9 @@ function ScanDetailPageInner({ params }: { params: { id: string } }) {
                               )}
                             </td>
                             <td className="px-4 py-3 font-mono text-blue-400">{vulnerability.cve_id || '—'}</td>
-                            <td className="px-4 py-3 font-mono text-gray-400">{vulnerability.subdomain}:{vulnerability.port}</td>
+                            <td className="px-4 py-3 font-mono text-gray-400">
+                              {vulnerability.subdomain}{vulnerability.port != null ? `:${vulnerability.port}` : ''}
+                            </td>
                             <td className="px-4 py-3 font-semibold text-gray-300">
                               {typeof vulnerability.cvss_score === 'number' ? vulnerability.cvss_score.toFixed(1) : '—'}
                             </td>

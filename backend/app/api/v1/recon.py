@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -435,38 +436,80 @@ async def recon_screenshots(
 @router.get("/vulnerabilities")
 async def recon_vulnerabilities(
     domain_id: str = Query(...),
+    scan_id: Optional[str] = Query(None),
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     domain = _owned_domain(db, current_user.id, domain_id)
-    if not _has_verified_real_results(db, domain):
+    scan_query = db.query(Scan).filter(
+        Scan.asset_id == domain.asset_id,
+        Scan.target_domain == domain.domain,
+    )
+    if scan_id:
+        scan = scan_query.filter(Scan.id == scan_id).first()
+        if not scan:
+            raise HTTPException(status_code=404, detail="Scan not found for this domain")
+    else:
+        scan = (
+            scan_query
+            .filter(Scan.status == "completed")
+            .order_by(Scan.created_at.desc())
+            .first()
+        )
+
+    if not scan:
         return {
             "vulnerabilities": [],
             "total": 0,
             "verified_real_scan": False,
-            "message": "Run and complete Full Recon to replace legacy unverified results.",
+            "message": "No completed real scan findings are available for this domain.",
         }
+
+    severity_order = case(
+        (Vulnerability.severity == "Critical", 0),
+        (Vulnerability.severity == "High", 1),
+        (Vulnerability.severity == "Medium", 2),
+        (Vulnerability.severity == "Low", 3),
+        else_=4,
+    )
     rows = (
-        db.query(Vulnerability, Subdomain, Port)
-        .join(Service, Vulnerability.service_id == Service.id)
-        .join(Port, Service.port_id == Port.id)
-        .join(Subdomain, Port.subdomain_id == Subdomain.id)
-        .filter(Subdomain.domain_id == domain_id)
-        .order_by(Vulnerability.created_at.desc())
+        db.query(Vulnerability)
+        .filter(Vulnerability.scan_id == scan.id)
+        .order_by(severity_order, Vulnerability.created_at.desc())
         .all()
     )
     vulnerabilities = [{
         "id": vulnerability.id,
+        "scan_id": scan.id,
+        "scan_reference": scan.reference_id,
         "cve_id": vulnerability.cve_id,
         "title": vulnerability.title,
         "description": vulnerability.description,
         "severity": vulnerability.severity,
         "cvss_score": vulnerability.cvss_score,
-        "subdomain": subdomain.subdomain,
-        "port": port.port_number,
+        "subdomain": vulnerability.host or scan.target_domain or "unknown",
+        "port": vulnerability.port,
+        "source": vulnerability.source,
+        "category": (
+            "observation"
+            if (vulnerability.severity or "Info").lower() == "info"
+            else "vulnerability"
+        ),
         "created_at": vulnerability.created_at,
-    } for vulnerability, subdomain, port in rows]
-    return {"vulnerabilities": vulnerabilities, "total": len(vulnerabilities)}
+    } for vulnerability in rows]
+    actionable_total = sum(
+        1 for vulnerability in rows
+        if (vulnerability.severity or "Info").lower() != "info"
+    )
+    return {
+        "vulnerabilities": vulnerabilities,
+        "total": len(vulnerabilities),
+        "actionable_total": actionable_total,
+        "informational_total": len(vulnerabilities) - actionable_total,
+        "verified_real_scan": scan.status == "completed",
+        "scan_id": scan.id,
+        "scan_reference": scan.reference_id,
+    }
 
 
 @router.get("/ai-service-assessments")

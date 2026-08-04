@@ -94,7 +94,7 @@ class ScanRepository(BaseRepository[Scan]):
         update_data = {"status": status}
         if status == "running":
             update_data["started_at"] = datetime.utcnow()
-        elif status == "completed" or status == "failed":
+        elif status in {"completed", "failed", "cancelled"}:
             update_data["completed_at"] = datetime.utcnow()
         
         return self.update(scan_id, update_data)

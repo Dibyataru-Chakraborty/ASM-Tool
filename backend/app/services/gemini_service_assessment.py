@@ -75,6 +75,16 @@ def _severity_rank(value: str) -> int:
     return {"Info": 0, "Low": 1, "Medium": 2, "High": 3, "Critical": 4}.get(value, 0)
 
 
+def _is_quota_error(error: Exception) -> bool:
+    text = f"{error.__class__.__name__}: {error}".lower()
+    return (
+        "429" in text
+        or "too_many_requests" in text
+        or "quota" in text
+        or "rate limit" in text
+    )
+
+
 def _normalize_url(value: str) -> str:
     """Normalize a URL for citation/evidence comparison."""
     try:
@@ -287,19 +297,46 @@ class GeminiServiceVersionAnalyzer:
                 severity_counts["Info"] += 1
 
         batch_size = max(1, min(20, settings.gemini_service_batch_size))
+        quota_exhausted = False
         for start in range(0, len(unique_items), batch_size):
             batch = unique_items[start:start + batch_size]
-            try:
-                response_items, cited_urls = self._assess_batch(batch)
-            except Exception as exc:
-                logger.exception("Gemini service-version batch failed")
-                warnings.append(f"Gemini service-version analysis failed for one batch: {exc}")
+            if quota_exhausted:
                 for request_item in batch:
                     for row in group_members.get(request_item["analysis_key"], []):
                         self._persist_unknown(
                             scan_id,
                             row,
-                            "Gemini could not complete this service-version assessment. Review the scan warning and retry later.",
+                            "Gemini was skipped because the configured API quota is exhausted.",
+                        )
+                        assessed_count += 1
+                        severity_counts["Info"] += 1
+                continue
+            try:
+                response_items, cited_urls = self._assess_batch(batch)
+            except Exception as exc:
+                logger.exception("Gemini service-version batch failed")
+                if _is_quota_error(exc):
+                    quota_exhausted = True
+                    warnings.append(
+                        "Gemini service-version analysis skipped because the API quota is exhausted "
+                        "(HTTP 429). Nuclei and other scanner findings are unaffected."
+                    )
+                    reason = "Gemini could not run because the configured API quota is exhausted."
+                else:
+                    warnings.append(
+                        "Gemini service-version analysis failed for one batch: "
+                        f"{exc.__class__.__name__}: {str(exc)[:300]}"
+                    )
+                    reason = (
+                        "Gemini could not complete this service-version assessment. "
+                        "Review the scan warning and retry later."
+                    )
+                for request_item in batch:
+                    for row in group_members.get(request_item["analysis_key"], []):
+                        self._persist_unknown(
+                            scan_id,
+                            row,
+                            reason,
                         )
                         assessed_count += 1
                         severity_counts["Info"] += 1

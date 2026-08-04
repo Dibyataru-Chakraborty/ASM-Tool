@@ -59,6 +59,21 @@ def reconcile_interrupted_scans() -> int:
         db.close()
 
 
+def backfill_scan_archives() -> int:
+    """Create missing compressed snapshots for scans already in the database."""
+    from app.services.scan_archive_service import ScanArchiveService
+    from app.utils.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return ScanArchiveService().backfill_missing(db)
+    except Exception:
+        logger.exception("Could not backfill historical scan archives")
+        return 0
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context manager."""
@@ -73,6 +88,9 @@ async def lifespan(app: FastAPI):
             "Marked %s interrupted scan job(s) as failed after restart",
             interrupted_count,
         )
+    archived_count = backfill_scan_archives()
+    if archived_count:
+        logger.info("Created %s missing historical scan archive(s)", archived_count)
     schedule_task = asyncio.create_task(scheduler_loop())
 
     yield

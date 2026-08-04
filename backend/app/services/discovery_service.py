@@ -267,7 +267,9 @@ class DiscoveryService:
             result = self._run_projectdiscovery_pipeline(scan, domain)
 
             warnings = result.get("warnings", [])
-            warning_message = "\n".join(warnings) if warnings else None
+            # A per-target optional tool can emit the same failure repeatedly.
+            # Keep saved scan warnings concise without hiding unique causes.
+            warning_message = "\n".join(dict.fromkeys(warnings)) if warnings else None
             self.scan_repo.update(scan_id, {
                 "discovered_count": result["discovered_count"],
                 "vulnerable_count": result["vulnerable_count"],
@@ -291,6 +293,18 @@ class DiscoveryService:
                 asset.last_scanned_at = datetime.now(timezone.utc)
                 asset.risk_score = result["risk_score"]
             self.db.commit()
+            try:
+                from app.services.scan_archive_service import ScanArchiveService
+
+                ScanArchiveService().archive_scan(
+                    self.db,
+                    scan_id,
+                    overwrite=True,
+                )
+            except Exception:
+                # Archiving is a durability layer; it must not turn a factual,
+                # already-committed scan into a failed scan.
+                logger.exception("Could not archive completed scan %s", scan_id)
             logger.info(
                 "Real recon scan %s completed with %s discoveries, %s vulnerabilities, and %s warning(s)",
                 scan_id,
@@ -314,8 +328,16 @@ class DiscoveryService:
                 if domain:
                     domain.scan_status = "failed"
                     self.db.commit()
+                from app.services.scan_archive_service import ScanArchiveService
+
+                ScanArchiveService().archive_scan(
+                    self.db,
+                    scan_id,
+                    overwrite=True,
+                )
             except Exception:
                 self.db.rollback()
+                logger.exception("Could not archive failed scan %s", scan_id)
 
     def _run_projectdiscovery_pipeline(self, scan: Scan, domain: Domain) -> Dict[str, Any]:
         """Run the real multi-tool scanner pipeline and persist factual output."""
@@ -332,6 +354,7 @@ class DiscoveryService:
             collect_additional_subdomains,
             collect_additional_urls,
             run_specialized_assessments,
+            select_nuclei_targets,
         )
         from app.services.recon_tool_service import (
             enabled_recon_tool_paths,
@@ -946,27 +969,53 @@ class DiscoveryService:
                         continue_on_error=True,
                     )
                 if any(template_dir.rglob("*.yaml")):
+                    nuclei_targets = select_nuclei_targets(
+                        urls,
+                        target,
+                        settings.nuclei_max_targets,
+                    )
+                    nuclei_targets_file = temp_path / "nuclei-targets.txt"
+                    nuclei_targets_file.write_text(
+                        "\n".join(nuclei_targets) + ("\n" if nuclei_targets else ""),
+                        encoding="utf-8",
+                    )
+                    nuclei_results_file = temp_path / "nuclei-findings.jsonl"
+                    nuclei_severities = "critical,high,medium,low"
+                    if settings.nuclei_include_info_findings:
+                        nuclei_severities += ",info"
                     nuclei_result = run_command(
                         [
                             str(tools["nuclei"]),
-                            "-l", str(urls_file),
+                            "-l", str(nuclei_targets_file),
                             "-templates", str(template_dir),
-                            "-severity", "critical,high,medium,low,info",
+                            "-severity", nuclei_severities,
                             "-jsonl", "-silent",
-                            "-timeout", "10",
-                            "-retries", "1",
-                            "-rate-limit", "100",
-                            "-concurrency","35",
-                            "-bulk-size","35",
+                            "-output", str(nuclei_results_file),
+                            "-timeout", str(settings.nuclei_request_timeout),
+                            "-retries", str(settings.nuclei_retries),
+                            "-rate-limit", str(settings.nuclei_rate_limit),
+                            "-concurrency", str(settings.nuclei_concurrency),
+                            "-bulk-size", str(settings.nuclei_bulk_size),
                             "-disable-update-check",
                         ],
                         "nuclei",
                         settings.nuclei_scan_timeout_seconds,
                         continue_on_error=True,
                     )
-                    # TimeoutExpired includes output produced before the process
-                    # was stopped, so real findings are not discarded.
-                    nuclei_rows = parse_json_lines(nuclei_result.stdout)
+                    # The output file is written incrementally, so factual
+                    # matches survive an overall process timeout.
+                    nuclei_output = nuclei_result.stdout
+                    if nuclei_results_file.is_file():
+                        nuclei_output = nuclei_results_file.read_text(
+                            encoding="utf-8",
+                            errors="replace",
+                        )
+                    nuclei_rows = parse_json_lines(nuclei_output)
+                    logger.info(
+                        "Nuclei scanned %s prioritized target(s) and returned %s actionable finding(s)",
+                        len(nuclei_targets),
+                        len(nuclei_rows),
+                    )
                 else:
                     message = "nuclei skipped because no templates are available"
                     logger.warning(message)
@@ -1204,6 +1253,7 @@ class DiscoveryService:
                 ensure_service(host, port_number)
 
             vulnerabilities_created = 0
+            informational_findings_created = 0
             severity_risk = {"critical": 95, "high": 80, "medium": 55, "low": 25, "info": 0}
             highest_risk = 0
             seen_vulnerabilities: set[tuple[str, str, str]] = set()
@@ -1241,6 +1291,7 @@ class DiscoveryService:
                     cvss_score = None
 
                 self.db.add(Vulnerability(
+                    scan_id=scan.id,
                     service_id=service.id,
                     cve_id=(str(row.get("cve_id"))[:50] if row.get("cve_id") else None),
                     title=title,
@@ -1248,8 +1299,15 @@ class DiscoveryService:
                     severity=severity.capitalize(),
                     cvss_score=cvss_score,
                     cvss_vector=None,
+                    host=host or None,
+                    port=port_number,
+                    matched_at=matched_at or None,
+                    source=str(row.get("source") or "specialized")[:50],
                 ))
-                vulnerabilities_created += 1
+                if severity == "info":
+                    informational_findings_created += 1
+                else:
+                    vulnerabilities_created += 1
                 highest_risk = max(
                     highest_risk,
                     round(cvss_score * 10)
@@ -1268,13 +1326,15 @@ class DiscoveryService:
                     continue
 
                 template_id = str(row.get("template-id") or "")
-                title = str(info.get("name") or template_id or "Nuclei finding")
+                title = str(info.get("name") or template_id or "Nuclei finding")[:255]
                 identity = (template_id, matched_at, title)
                 if identity in seen_vulnerabilities:
                     continue
                 seen_vulnerabilities.add(identity)
 
                 severity = str(info.get("severity") or "info").lower()
+                if severity not in severity_risk:
+                    severity = "info"
                 classification = info.get("classification") or {}
                 cve_values = classification.get("cve-id") or []
                 if isinstance(cve_values, str):
@@ -1292,6 +1352,7 @@ class DiscoveryService:
                     raw_vector = ", ".join(str(value) for value in raw_vector)
 
                 self.db.add(Vulnerability(
+                    scan_id=scan.id,
                     service_id=service.id,
                     cve_id=cve_id[:50] if cve_id else None,
                     title=title,
@@ -1299,8 +1360,15 @@ class DiscoveryService:
                     severity=severity.capitalize(),
                     cvss_score=cvss_score,
                     cvss_vector=str(raw_vector)[:255] if raw_vector else None,
+                    host=host or None,
+                    port=port_number,
+                    matched_at=matched_at or None,
+                    source="nuclei",
                 ))
-                vulnerabilities_created += 1
+                if severity == "info":
+                    informational_findings_created += 1
+                else:
+                    vulnerabilities_created += 1
                 highest_risk = max(
                     highest_risk,
                     round(cvss_score * 10) if cvss_score is not None else severity_risk.get(severity, 0),
@@ -1397,6 +1465,7 @@ class DiscoveryService:
             return {
                 "discovered_count": len(subdomain_by_name),
                 "vulnerable_count": vulnerabilities_created + ai_actionable_count,
+                "informational_count": informational_findings_created,
                 "risk_score": min(100, highest_risk),
                 "warnings": pipeline_warnings,
             }

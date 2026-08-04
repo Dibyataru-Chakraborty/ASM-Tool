@@ -17,15 +17,15 @@ import {
 } from 'lucide-react'
 
 const NAV = [
-  { href: '/dashboard',       icon: LayoutDashboard, label: 'Dashboard'       },
-  { href: '/assets',          icon: Server,          label: 'Assets'          },
-  { href: '/scheduler',       icon: CalendarClock,   label: 'Scheduler'       },
-  { href: '/scans',           icon: History,         label: 'Scan History'    },
-  { href: '/recon',           icon: Globe2,          label: 'Recon Engine'    },
-  { href: '/shannon',         icon: Bot,             label: 'AI Pentest'      },
-  { href: '/vulnerabilities', icon: Bug,             label: 'Vulnerabilities' },
-  { href: '/reports',         icon: FileText,        label: 'Reports'         },
-  { href: '/settings',        icon: Settings,        label: 'Settings'        },
+  { href: '/dashboard',       icon: LayoutDashboard, iconClass: 'text-sky-400',     label: 'Dashboard'       },
+  { href: '/assets',          icon: Server,          iconClass: 'text-indigo-400',  label: 'Assets'          },
+  { href: '/scheduler',       icon: CalendarClock,   iconClass: 'text-amber-400',   label: 'Scheduler'       },
+  { href: '/scans',           icon: History,         iconClass: 'text-purple-400',  label: 'Scan History'    },
+  { href: '/recon',           icon: Globe2,          iconClass: 'text-cyan-400',    label: 'Recon Engine'    },
+  { href: '/shannon',         icon: Bot,             iconClass: 'text-pink-400',    label: 'AI Pentest'      },
+  { href: '/vulnerabilities', icon: Bug,             iconClass: 'text-red-400',     label: 'Vulnerabilities' },
+  { href: '/reports',         icon: FileText,        iconClass: 'text-emerald-400', label: 'Reports'         },
+  { href: '/settings',        icon: Settings,        iconClass: 'text-slate-400',   label: 'Settings'        },
 ]
 
 export default function Sidebar() {
@@ -50,7 +50,7 @@ export default function Sidebar() {
           const Icon = n.icon
           return (
             <Link key={n.href} href={n.href} className={active ? 'nav-active' : 'nav-item'}>
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <Icon className={`h-4 w-4 shrink-0 ${n.iconClass}`} aria-hidden="true" />
               <span>{n.label}</span>
             </Link>
           )

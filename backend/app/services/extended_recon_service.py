@@ -102,6 +102,56 @@ def cap_urls(values: Iterable[str], maximum: int) -> list[str]:
     return sorted(set(values))[: max(0, maximum)]
 
 
+def select_nuclei_targets(values: Iterable[str], target: str, maximum: int) -> list[str]:
+    """Prioritize origins and parameterized endpoints for a bounded scan."""
+    normalized = {
+        candidate
+        for value in values
+        if (candidate := normalize_url(value, target))
+    }
+    origins = {
+        origin
+        for value in normalized
+        if (origin := origin_url(value, target))
+    }
+    parameterized = {
+        value for value in normalized
+        if urlparse(value).query and value not in origins
+    }
+    other_paths = normalized - origins - parameterized
+    prioritized = [
+        *sorted(origins),
+        *sorted(parameterized),
+        *sorted(other_paths),
+    ]
+    return prioritized[: max(0, maximum)]
+
+
+def build_dirsearch_command(
+    executable: Path,
+    url: str,
+    report: Path,
+    max_rate: int,
+) -> list[str]:
+    """Build a dirsearch v0.5-compatible JSON report command."""
+    return [
+        str(executable),
+        "-u",
+        url,
+        "-O",
+        "json",
+        "-o",
+        str(report),
+        "--quiet-mode",
+        "--max-rate",
+        str(max_rate),
+        "--timeout",
+        "8",
+        "--retries",
+        "1",
+    ]
+
+
 def parse_json_file(path: Path) -> Any:
     if not path.is_file():
         return None
@@ -383,22 +433,12 @@ def collect_additional_urls(
         for index, url in enumerate(limited_roots[: settings.dirsearch_max_targets], start=1):
             report = temp_path / f"content-discovery-{index}.json"
             run_command(
-                [
-                    str(tools["dirsearch"]),
-                    "-u",
+                build_dirsearch_command(
+                    tools["dirsearch"],
                     url,
-                    "--format",
-                    "json",
-                    "-o",
-                    str(report),
-                    "--quiet-mode",
-                    "--max-rate",
-                    str(settings.dirsearch_max_rate),
-                    "--timeout",
-                    "8",
-                    "--retries",
-                    "1",
-                ],
+                    report,
+                    settings.dirsearch_max_rate,
+                ),
                 "web content discovery",
                 settings.dirsearch_timeout_seconds,
                 continue_on_error=True,
@@ -537,6 +577,7 @@ def _xssvibes_findings(
         seen.add(matched_at)
 
         findings.append({
+            "source": "xss_vibes",
             "title":
                 "Potential reflected cross-site scripting identified",
 
@@ -660,6 +701,7 @@ def _nikto_findings(
                     )
 
                 findings.append({
+                    "source": "nikto",
                     "title":
                         f"Nikto: {title_text}",
 
@@ -712,6 +754,7 @@ def _wpscan_vulnerabilities(payload: Any, url: str) -> list[dict[str, Any]]:
                     if str(value).strip()
                 ]
             rows.append({
+                "source": "wpscan",
                 "title": title,
                 "description": json.dumps({
                     "component": component,
@@ -870,6 +913,7 @@ def run_specialized_assessments(
             if _XSS_VULNERABLE_RE.search(combined):
                 excerpt = re.sub(r"\x1b\[[0-9;]*m", "", combined)[-3000:]
                 vulnerabilities.append({
+                    "source": "xsstrike",
                     "title": "Potential cross-site scripting identified",
                     "description": excerpt,
                     "severity": "Medium",

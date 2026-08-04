@@ -3,17 +3,109 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user
-from app.models import Asset, Domain, Report, Subdomain
+from app.models import Asset, Domain, Report, Scan, Subdomain
 from app.models.phase2 import Port, Service, Vulnerability
+from app.services.report_generation_service import (
+    build_docx_report,
+    build_pdf_report,
+    build_scan_report_payload,
+)
 from app.utils.database import get_db
 
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+class ScanReportRequest(BaseModel):
+    """Scan reference supplied by a user from the scan history page."""
+
+    scan_id: str = Field(min_length=1, max_length=64)
+
+
+def _owned_scan(db: Session, user_id: str, scan_identifier: str) -> tuple[Scan, Asset]:
+    row = (
+        db.query(Scan, Asset)
+        .join(Asset, Scan.asset_id == Asset.id)
+        .filter(
+            Asset.user_id == user_id,
+            or_(
+                Scan.id == scan_identifier.strip(),
+                Scan.reference_id == scan_identifier.strip(),
+            ),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Scan ID was not found")
+    scan, asset = row
+    if str(scan.status).lower() in {"pending", "queued", "running"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This scan is still running. Generate the report after it completes.",
+        )
+    return scan, asset
+
+
+def _scan_report(db: Session, user_id: str, scan_identifier: str) -> dict:
+    scan, asset = _owned_scan(db, user_id, scan_identifier)
+    severity_order = case(
+        (Vulnerability.severity == "Critical", 0),
+        (Vulnerability.severity == "High", 1),
+        (Vulnerability.severity == "Medium", 2),
+        (Vulnerability.severity == "Low", 3),
+        else_=4,
+    )
+    findings = (
+        db.query(Vulnerability)
+        .filter(Vulnerability.scan_id == scan.id)
+        .order_by(severity_order, Vulnerability.cvss_score.desc().nullslast(), Vulnerability.id)
+        .all()
+    )
+    return build_scan_report_payload(scan, asset, findings)
+
+
+@router.post("/generate")
+async def generate_scan_report(
+    request: ScanReportRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Build a structured report from findings retained under one scan ID."""
+    return _scan_report(db, current_user.id, request.scan_id)
+
+
+@router.get("/scan/{scan_identifier}/export/{report_format}")
+async def export_scan_report(
+    scan_identifier: str,
+    report_format: Literal["docx", "pdf"],
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Download the scan-scoped structured report as Word or PDF."""
+    report = _scan_report(db, current_user.id, scan_identifier)
+    reference = report["scan"]["reference_id"]
+    if report_format == "docx":
+        content = build_docx_report(report)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        content = build_pdf_report(report)
+        media_type = "application/pdf"
+    filename = f"security-report-{reference}.{report_format}"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("")
@@ -95,4 +187,3 @@ async def list_reports(
         })
 
     return {"reports": reports, "total": len(reports)}
-

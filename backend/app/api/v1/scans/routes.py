@@ -288,6 +288,35 @@ async def get_scan(
         raise HTTPException(status_code=500, detail="Failed to get scan")
 
 
+@router.get("/{scan_id}/archive")
+async def get_scan_archive(
+    scan_id: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the immutable compressed snapshot for one owned terminal scan."""
+    from app.models import Asset, Scan
+    from app.services.scan_archive_service import ScanArchiveService
+
+    scan = db.query(Scan).join(Asset).filter(
+        Scan.id == scan_id,
+        Asset.user_id == current_user.id,
+    ).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status not in {"completed", "failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Scan archive is available after the scan finishes")
+
+    archive_service = ScanArchiveService()
+    payload = archive_service.read_archive(current_user.id, scan.id)
+    if payload is None:
+        archive_service.archive_scan(db, scan.id)
+        payload = archive_service.read_archive(current_user.id, scan.id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Scan archive is not available")
+    return payload
+
+
 @router.post("/{scan_id}/cancel", status_code=status.HTTP_200_OK)
 async def cancel_scan(
     scan_id: str,
@@ -311,6 +340,12 @@ async def cancel_scan(
         
         # Update status to cancelled
         scan_repo.update_status(scan_id, "cancelled")
+        try:
+            from app.services.scan_archive_service import ScanArchiveService
+
+            ScanArchiveService().archive_scan(db, scan_id, overwrite=True)
+        except Exception:
+            logger.exception("Could not archive cancelled scan %s", scan_id)
         
         return {"message": "Scan cancelled successfully"}
     except (NotFoundError, ValidationError) as e:
@@ -355,6 +390,7 @@ async def delete_scan(
             )
 
         reference_id = scan.reference_id
+        owner_id = current_user.id
 
         # Delete Gemini assessments connected to this scan.
         db.query(AIServiceAssessment).filter(
@@ -375,10 +411,19 @@ async def delete_scan(
 
         clear_live_scan_state(scan_id)
 
+        from app.services.scan_archive_service import ScanArchiveService
+
+        try:
+            archive_deleted = ScanArchiveService().delete_archive(owner_id, scan_id)
+        except Exception:
+            archive_deleted = False
+            logger.exception("Scan %s was deleted but its archive cleanup failed", scan_id)
+
         return {
             "message": "Scan deleted permanently",
             "scan_id": scan_id,
             "reference_id": reference_id,
+            "archive_deleted": archive_deleted,
         }
 
     except (NotFoundError, ValidationError) as exc:

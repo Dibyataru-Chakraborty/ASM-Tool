@@ -44,6 +44,7 @@ export const asm = {
   triggerScan:  (asset_id: string) => client.post('/api/v1/scans/trigger', { asset_id }).then(r => r.data),
   getScans:     (p?: any) => client.get('/api/v1/scans', { params: p }).then(r => r.data),
   getScan:      (id: string) => client.get(`/api/v1/scans/${id}`).then(r => r.data),
+  getScanArchive: (id: string) => client.get(`/api/v1/scans/${id}/archive`).then(r => r.data),
   getScanTools: (id: string) => client.get(`/api/v1/scans/${id}/tools`).then(r => r.data),
   getScanLogs:  (id: string, since?: string) => client.get(`/api/v1/scans/${id}/logs`, { params: since ? { since_id: since } : {} }).then(r => r.data),
   cancelScan:   (id: string) => client.post(`/api/v1/scans/${id}/cancel`).then(r => r.data),
@@ -59,9 +60,9 @@ export const asm = {
     '/api/v1/recon/ips',
     { params: { domain_id: domainId } },
   ).then(r => r.data),
-  getReconVulnerabilities: (domainId: string) => client.get(
+  getReconVulnerabilities: (domainId: string, scanId?: string) => client.get(
     '/api/v1/recon/vulnerabilities',
-    { params: { domain_id: domainId } },
+    { params: { domain_id: domainId, ...(scanId ? { scan_id: scanId } : {}) } },
   ).then(r => r.data),
   getReconAIServiceAssessments: (scanId: string) => client.get(
     '/api/v1/recon/ai-service-assessments',
@@ -82,6 +83,14 @@ export const asm = {
   getReports:   (p?: any) => client.get('/api/v1/reports', { params: p }).then(r => r.data),
   getReport:    (id: string) => client.get(`/api/v1/reports/${id}`).then(r => r.data),
   exportReport: (id: string, fmt: string) => `${API}/api/v1/reports/${id}/export/${fmt}`,
+  generateScanReport: (scanId: string) => client.post(
+    '/api/v1/reports/generate',
+    { scan_id: scanId },
+  ).then(r => r.data),
+  downloadScanReport: (scanId: string, format: 'docx' | 'pdf') => client.get(
+    `/api/v1/reports/scan/${encodeURIComponent(scanId)}/export/${format}`,
+    { responseType: 'blob', timeout: 120000 },
+  ),
 
   // Dashboard
   getDashboard: () => client.get('/api/v1/dashboard/full').then(r => r.data),

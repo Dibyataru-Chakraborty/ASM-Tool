@@ -48,6 +48,15 @@ function VulnDetailPageInner({ params }: { params: Promise<{ id: string }> }) {
               {vuln.cvss_score && <span className="tag-info">CVSS {vuln.cvss_score.toFixed(1)}</span>}
               {vuln.cve_id && <span className="text-xs font-mono text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">{vuln.cve_id}</span>}
               {vuln.cwe_id && <span className="text-xs font-mono text-gray-400 bg-gray-500/10 border border-gray-500/20 px-2 py-0.5 rounded">{vuln.cwe_id}</span>}
+              {vuln.scan_id && (
+                <Link
+                  href={`/scans/${vuln.scan_id}`}
+                  title={vuln.scan_id}
+                  className="rounded border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 font-mono text-xs text-blue-400 hover:text-blue-300"
+                >
+                  {vuln.scan_reference || vuln.scan_id}
+                </Link>
+              )}
             </div>
           </div>
           {vuln.is_false_positive && <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-1 rounded">False Positive</span>}
@@ -63,6 +72,7 @@ function VulnDetailPageInner({ params }: { params: Promise<{ id: string }> }) {
             {vuln.host && <div><p className="text-[10px] text-gray-500">Host</p><p className="text-xs font-mono text-gray-300">{vuln.host}</p></div>}
             {vuln.url  && <div><p className="text-[10px] text-gray-500">URL</p><p className="text-xs font-mono text-blue-400 break-all">{vuln.url}</p></div>}
             {vuln.port && <div><p className="text-[10px] text-gray-500">Port</p><p className="text-xs font-mono text-gray-300">{vuln.port}</p></div>}
+            {vuln.source && <div><p className="text-[10px] text-gray-500">Scanner source</p><p className="text-xs font-mono text-gray-300">{vuln.source}</p></div>}
             {vuln.parameter && <div><p className="text-[10px] text-gray-500">Parameter</p><p className="text-xs font-mono text-yellow-400">{vuln.parameter}</p></div>}
           </div>
 

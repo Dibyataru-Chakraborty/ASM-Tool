@@ -3,6 +3,7 @@ API Routes for Phases 2-10: All advanced endpoints.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.dependencies import get_current_user
@@ -42,43 +43,154 @@ async def create_port(
 # Phase 3: Vulnerabilities Endpoints
 vuln_router = APIRouter(prefix="/vulnerabilities", tags=["vulnerabilities"])
 
+
+def _owned_vulnerability_query(db: Session, user_id: str):
+    """Return findings connected to scans owned by one user."""
+    from app.models import Asset, Scan
+    from app.models.phase2 import Vulnerability
+
+    return (
+        db.query(Vulnerability, Scan)
+        .join(Scan, Vulnerability.scan_id == Scan.id)
+        .join(Asset, Scan.asset_id == Asset.id)
+        .filter(Asset.user_id == user_id)
+    )
+
+
+def _vulnerability_payload(vulnerability, scan) -> dict:
+    severity = (vulnerability.severity or "Info").lower()
+    return {
+        "id": vulnerability.id,
+        "scan_id": scan.id,
+        "scan_reference": scan.reference_id,
+        "scan_target": scan.target_domain,
+        "cve_id": vulnerability.cve_id,
+        "title": vulnerability.title,
+        "description": vulnerability.description,
+        "severity": severity,
+        "cvss_score": vulnerability.cvss_score,
+        "cvss_vector": vulnerability.cvss_vector,
+        "host": vulnerability.host,
+        "target": vulnerability.host,
+        "port": vulnerability.port,
+        "url": vulnerability.matched_at,
+        "source": vulnerability.source,
+        "is_false_positive": vulnerability.is_false_positive,
+        "created_at": vulnerability.created_at,
+        "scan": {
+            "id": scan.id,
+            "reference_id": scan.reference_id,
+            "target_domain": scan.target_domain,
+            "status": scan.status,
+            "created_at": scan.created_at,
+        },
+    }
+
 @vuln_router.get("")
 async def list_vulnerabilities(
-    severity: str = Query(None),
+    severity: str = Query(None, pattern="^(critical|high|medium|low|info)$"),
+    scan_id: str = Query(None, min_length=1, max_length=64),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List vulnerabilities."""
-    from app.models.phase2 import Vulnerability, Service, Port
-    from app.models import Subdomain, Domain, Asset
+    """List factual findings retained across all completed scan records."""
+    from app.models import Asset, Scan
+    from app.models.phase2 import Vulnerability
 
     try:
-        query = db.query(Vulnerability).join(Service).join(Port).join(Subdomain).join(Domain).join(Asset).filter(Asset.user_id == current_user.id)
+        base_query = _owned_vulnerability_query(db, current_user.id)
+
+        if scan_id:
+            base_query = base_query.filter(or_(
+                Scan.id == scan_id,
+                Scan.reference_id == scan_id,
+            ))
+
+        severity_counts = {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 0,
+        }
+        count_rows = (
+            base_query
+            .with_entities(func.lower(Vulnerability.severity), func.count(Vulnerability.id))
+            .group_by(func.lower(Vulnerability.severity))
+            .all()
+        )
+        for severity_name, count in count_rows:
+            normalized = (severity_name or "info").lower()
+            if normalized in severity_counts:
+                severity_counts[normalized] = count
+
+        query = base_query
         if severity:
             query = query.filter(Vulnerability.severity == severity.capitalize())
-        
-        vulns = query.all()
-        
-        result = []
-        for v in vulns:
-            service = db.query(Service).filter(Service.id == v.service_id).first()
-            port = db.query(Port).filter(Port.id == service.port_id).first() if service else None
-            subdomain = db.query(Subdomain).filter(Subdomain.id == port.subdomain_id).first() if port else None
-            result.append({
-                "id": v.id,
-                "cve_id": v.cve_id,
-                "title": v.title,
-                "description": v.description,
-                "severity": v.severity.lower() if v.severity else "medium",
-                "cvss_score": v.cvss_score or 5.0,
-                "target": subdomain.subdomain if subdomain else "unknown",
-                "created_at": v.created_at,
-            })
-        
-        return {"vulnerabilities": result, "total": len(result)}
+
+        total = query.count()
+        severity_order = case(
+            (Vulnerability.severity == "Critical", 0),
+            (Vulnerability.severity == "High", 1),
+            (Vulnerability.severity == "Medium", 2),
+            (Vulnerability.severity == "Low", 3),
+            else_=4,
+        )
+        rows = (
+            query
+            .order_by(
+                severity_order,
+                Vulnerability.created_at.desc(),
+                Vulnerability.id.desc(),
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+        scan_rows = (
+            db.query(
+                Scan.id,
+                Scan.reference_id,
+                Scan.target_domain,
+                Scan.created_at,
+                func.count(Vulnerability.id).label("finding_count"),
+            )
+            .join(Vulnerability, Vulnerability.scan_id == Scan.id)
+            .join(Asset, Scan.asset_id == Asset.id)
+            .filter(Asset.user_id == current_user.id)
+            .group_by(
+                Scan.id,
+                Scan.reference_id,
+                Scan.target_domain,
+                Scan.created_at,
+            )
+            .order_by(Scan.created_at.desc())
+            .all()
+        )
+
+        return {
+            "vulnerabilities": [
+                _vulnerability_payload(vulnerability, scan)
+                for vulnerability, scan in rows
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "severity_counts": severity_counts,
+            "scans": [{
+                "id": row.id,
+                "reference_id": row.reference_id,
+                "target_domain": row.target_domain,
+                "created_at": row.created_at,
+                "finding_count": row.finding_count,
+            } for row in scan_rows],
+        }
     except Exception as e:
-        logger.error(f"Error querying vulnerabilities: {str(e)}")
-        return {"vulnerabilities": [], "total": 0}
+        logger.exception("Error querying vulnerability history: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to load vulnerability history")
 
 
 @vuln_router.get("/critical")
@@ -86,36 +198,67 @@ async def get_critical_vulnerabilities(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get critical vulnerabilities."""
-    from app.models.phase2 import Vulnerability, Service, Port
-    from app.models import Subdomain, Domain, Asset
+    """Get all critical findings from the user's retained scan history."""
+    from app.models.phase2 import Vulnerability
 
     try:
-        query = db.query(Vulnerability).join(Service).join(Port).join(Subdomain).join(Domain).join(Asset).filter(
-            Asset.user_id == current_user.id,
-            Vulnerability.severity == "Critical"
+        rows = (
+            _owned_vulnerability_query(db, current_user.id)
+            .filter(Vulnerability.severity == "Critical")
+            .order_by(Vulnerability.created_at.desc())
+            .all()
         )
-        vulns = query.all()
-        
-        result = []
-        for v in vulns:
-            service = db.query(Service).filter(Service.id == v.service_id).first()
-            port = db.query(Port).filter(Port.id == service.port_id).first() if service else None
-            subdomain = db.query(Subdomain).filter(Subdomain.id == port.subdomain_id).first() if port else None
-            result.append({
-                "id": v.id,
-                "cve_id": v.cve_id,
-                "title": v.title,
-                "description": v.description,
-                "severity": "critical",
-                "cvss_score": v.cvss_score or 9.0,
-                "target": subdomain.subdomain if subdomain else "unknown",
-                "created_at": v.created_at,
-            })
+        result = [
+            _vulnerability_payload(vulnerability, scan)
+            for vulnerability, scan in rows
+        ]
         return {"vulnerabilities": result, "total": len(result)}
     except Exception as e:
-        logger.error(f"Error querying critical vulnerabilities: {str(e)}")
-        return {"vulnerabilities": [], "total": 0}
+        logger.exception("Error querying critical vulnerability history: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to load critical findings")
+
+
+@vuln_router.get("/{vulnerability_id}")
+async def get_vulnerability(
+    vulnerability_id: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return one retained finding with its originating scan."""
+    from app.models.phase2 import Vulnerability
+
+    row = (
+        _owned_vulnerability_query(db, current_user.id)
+        .filter(Vulnerability.id == vulnerability_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Vulnerability not found")
+    return _vulnerability_payload(*row)
+
+
+@vuln_router.post("/{vulnerability_id}/false-positive")
+async def toggle_false_positive(
+    vulnerability_id: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Toggle the analyst false-positive flag on an owned finding."""
+    from app.models.phase2 import Vulnerability
+
+    row = (
+        _owned_vulnerability_query(db, current_user.id)
+        .filter(Vulnerability.id == vulnerability_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Vulnerability not found")
+
+    vulnerability, scan = row
+    vulnerability.is_false_positive = not vulnerability.is_false_positive
+    db.commit()
+    db.refresh(vulnerability)
+    return _vulnerability_payload(vulnerability, scan)
 
 
 # Phase 4: Threat Intelligence Endpoints

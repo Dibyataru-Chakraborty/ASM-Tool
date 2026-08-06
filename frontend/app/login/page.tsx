@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 
@@ -66,7 +65,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-gray-600">
-          No account? <Link href="/register" className="text-blue-400 hover:underline">Register</Link>
+          No account? 
         </p>
       </div>
     </div>

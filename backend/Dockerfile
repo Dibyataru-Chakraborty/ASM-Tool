@@ -1,45 +1,39 @@
 FROM python:3.12-slim
 
-# Set working directory
 WORKDIR /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PATH=$PATH:/usr/local/go/bin:/root/go/bin \
+    PATH=/usr/local/pd_tools:$PATH \
     PYTHONPATH=/app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    bash \
     gcc \
+    ca-certificates \
+    chromium \
+    curl \
+    default-jre-headless \
+    dirb \
+    libcurl4 \
+    libffi8 \
+    libssl3 \
+    libxml2 \
+    libxslt1.1 \
+    nodejs \
+    nmap \
+    perl \
+    libio-socket-ssl-perl \
+    libjson-pp-perl \
+    libnet-ssleay-perl \
+    libxml-writer-perl \
     postgresql-client \
-    wget \
-    git \
+    ruby \
     libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Go
-RUN wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz && \
-    rm go1.21.6.linux-amd64.tar.gz
-
-# Install ProjectDiscovery tools (all open-source tools, excluding pdtm)
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/asnmap/cmd/asnmap@latest && \
-    go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest && \
-    go install -v github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest && \
-    go install -v github.com/projectdiscovery/notify/cmd/notify@latest && \
-    go install -v github.com/projectdiscovery/proxify/cmd/proxify@latest && \
-    go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest && \
-    go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest && \
-    cp /root/go/bin/* /usr/local/bin/
 
 # Copy requirements
 COPY requirements.txt .
@@ -52,7 +46,10 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY . .
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /home/appuser/nuclei-templates \
+    && touch /home/appuser/nuclei-templates/.volume-owner \
+    && chown -R appuser:appuser /app /home/appuser/nuclei-templates
 USER appuser
 
 # Health check

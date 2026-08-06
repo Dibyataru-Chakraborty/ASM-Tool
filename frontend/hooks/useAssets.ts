@@ -10,7 +10,7 @@ export function useAssets(page = 0, limit = 10) {
   const fetch = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.getAssets(page * limit, limit)
+      const res = await api.getAssets({ skip: page * limit, limit })
       setData(res)
     } catch (e: any) {
       setError(e.response?.data?.detail || 'Failed to fetch assets')

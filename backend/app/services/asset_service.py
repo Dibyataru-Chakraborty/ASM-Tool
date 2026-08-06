@@ -1,180 +1,61 @@
-"""
-Asset service for managing reconnaissance targets.
-"""
-
+"""Tenant-aware asset/domain target management."""
 from typing import Optional, List, Dict, Any
+import json, logging
 from sqlalchemy.orm import Session
 from app.models import Asset, Domain
-from app.repositories.asset_repo import AssetRepository
 from app.repositories.domain_repo import DomainRepository
 from app.exceptions import NotFoundError, ConflictError, ValidationError
-import logging
-
-logger = logging.getLogger(__name__)
-
+logger=logging.getLogger(__name__)
 
 class AssetService:
-    """Service for managing assets (organizations/targets)."""
+    def __init__(self,db:Session): self.db=db; self.domain_repo=DomainRepository(db)
 
-    def __init__(self, db: Session):
-        self.db = db
-        self.asset_repo = AssetRepository(db)
-        self.domain_repo = DomainRepository(db)
+    def create_asset(self, organization_id:str, user_id:str, name:str, target:str, description:Optional[str]=None, asset_type:str="domain", tags:Optional[List[str]]=None)->Asset:
+        if not name or not name.strip(): raise ValidationError("Asset name cannot be empty")
+        domain_name=self._domain_from_target(target)
+        if asset_type in {"domain","subdomain","url","web_application","organization"} and not domain_name:
+            raise ValidationError("Domain and URL assets require a valid hostname")
+        if self.db.query(Asset).filter(Asset.organization_id==organization_id,Asset.name==name.strip(),Asset.status!="archived").first():
+            raise ConflictError(f"Asset '{name}' already exists in this organization")
+        asset=Asset(organization_id=organization_id,user_id=user_id,name=name.strip(),target=target.strip(),description=description,
+                    asset_type=asset_type,tags=json.dumps(tags or []),status="active",risk_score=0)
+        self.db.add(asset); self.db.flush()
+        if domain_name:
+            domain=Domain(organization_id=organization_id,asset_id=asset.id,domain=domain_name,is_active=True,is_vulnerable=False,scan_status="not_scanned")
+            self.db.add(domain); self.db.flush()
+            from app.services.attack_surface_service import AttackSurfaceService
+            AttackSurfaceService(self.db).ensure_primary_seed(organization_id,domain)
+        self.db.commit(); self.db.refresh(asset); return asset
 
-    def create_asset(
-        self,
-        user_id: str,
-        name: str,
-        description: Optional[str] = None,
-        asset_type: str = "domain",
-    ) -> Asset:
-        """Create a new asset."""
-        # Validate input
-        if not name or len(name.strip()) == 0:
-            raise ValidationError("Asset name cannot be empty")
-
-        # Check for duplicates
-        existing = self.asset_repo.get_by_user_and_name(user_id, name)
-        if existing:
-            raise ConflictError(f"Asset '{name}' already exists for this user")
-
-        # Create asset
-        try:
-            asset = self.asset_repo.create({
-                "user_id": user_id,
-                "name": name.strip(),
-                "description": description,
-                "asset_type": asset_type,
-                "status": "active",
-                "risk_score": 0,
-            })
-            logger.info(f"Asset created: {asset.id} for user {user_id}")
-            return asset
-        except Exception as e:
-            logger.error(f"Error creating asset: {str(e)}")
-            raise
-
-    def get_asset(self, asset_id: str, user_id: str) -> Asset:
-        """Get asset by ID (with ownership check)."""
-        asset = self.asset_repo.get_by_id(asset_id)
-        if not asset:
-            raise NotFoundError("Asset")
-
-        # Verify ownership
-        if asset.user_id != user_id:
-            raise ValidationError("Unauthorized access to asset")
-
-        return asset
-
-    def list_assets(self, user_id: str, skip: int = 0, limit: int = 10) -> tuple[List[Asset], int]:
-        """List all assets for a user."""
-        return self.asset_repo.get_by_user_id(user_id, skip, limit)
-
-    def list_active_assets(self, user_id: str, skip: int = 0, limit: int = 10) -> tuple[List[Asset], int]:
-        """List active assets for a user."""
-        return self.asset_repo.get_active_assets(user_id, skip, limit)
-
-    def update_asset(
-        self,
-        asset_id: str,
-        user_id: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> Asset:
-        """Update an asset."""
-        asset = self.get_asset(asset_id, user_id)
-
-        update_data = {}
-        if name:
-            update_data["name"] = name
-        if description is not None:
-            update_data["description"] = description
-        if status:
-            if status not in ["active", "archived", "monitoring"]:
-                raise ValidationError("Invalid status value")
-            update_data["status"] = status
-
-        if not update_data:
-            return asset
-
-        try:
-            asset = self.asset_repo.update(asset_id, update_data)
-            logger.info(f"Asset updated: {asset_id}")
-            return asset
-        except Exception as e:
-            logger.error(f"Error updating asset: {str(e)}")
-            raise
-
-    def delete_asset(self, asset_id: str, user_id: str) -> bool:
-        """Delete an asset."""
-        asset = self.get_asset(asset_id, user_id)
-
-        try:
-            # Delete related domains (cascade)
-            self.asset_repo.delete(asset_id)
-            logger.info(f"Asset deleted: {asset_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting asset: {str(e)}")
-            raise
-
-    def archive_asset(self, asset_id: str, user_id: str) -> Asset:
-        """Archive an asset (soft delete)."""
-        asset = self.get_asset(asset_id, user_id)
-        try:
-            asset = self.asset_repo.archive_asset(asset_id)
-            logger.info(f"Asset archived: {asset_id}")
-            return asset
-        except Exception as e:
-            logger.error(f"Error archiving asset: {str(e)}")
-            raise
-
-    def get_asset_stats(self, asset_id: str, user_id: str) -> Dict[str, Any]:
-        """Get statistics for an asset."""
-        asset = self.get_asset(asset_id, user_id)
-
-        try:
-            domains, _ = self.domain_repo.get_by_asset_id(asset_id)
-            total_domains = len(domains)
-            vulnerable_domains = len([d for d in domains if d.is_vulnerable])
-
-            # Count subdomains
-            total_subdomains = sum(len(d.subdomains) for d in domains)
-
-            return {
-                "asset_id": asset_id,
-                "name": asset.name,
-                "total_domains": total_domains,
-                "vulnerable_domains": vulnerable_domains,
-                "total_subdomains": total_subdomains,
-                "risk_score": asset.risk_score,
-                "status": asset.status,
-                "last_scanned": asset.updated_at,
-            }
-        except Exception as e:
-            logger.error(f"Error getting asset stats: {str(e)}")
-            raise
-
-    def calculate_risk_score(self, asset_id: str) -> int:
-        """Calculate risk score based on vulnerabilities."""
-        try:
-            asset = self.asset_repo.get_by_id(asset_id)
-            if not asset:
-                return 0
-
-            domains, _ = self.domain_repo.get_by_asset_id(asset_id)
-            vulnerable_count = len([d for d in domains if d.is_vulnerable])
-            
-            # Simple scoring: 0-100 based on vulnerability ratio
-            if not domains:
-                score = 0
-            else:
-                score = min(100, (vulnerable_count / len(domains)) * 100)
-
-            # Update asset risk score
-            self.asset_repo.update_risk_score(asset_id, int(score))
-            return int(score)
-        except Exception as e:
-            logger.error(f"Error calculating risk score: {str(e)}")
-            return 0
+    def get_asset(self,asset_id:str,organization_id:str)->Asset:
+        row=self.db.query(Asset).filter(Asset.id==asset_id,Asset.organization_id==organization_id).first()
+        if not row: raise NotFoundError("Asset")
+        return row
+    def list_assets(self,organization_id:str,skip:int=0,limit:int=10):
+        q=self.db.query(Asset).filter(Asset.organization_id==organization_id); return q.offset(skip).limit(limit).all(),q.count()
+    def list_active_assets(self,organization_id:str,skip:int=0,limit:int=10):
+        q=self.db.query(Asset).filter(Asset.organization_id==organization_id,Asset.status!="archived"); return q.offset(skip).limit(limit).all(),q.count()
+    def update_asset(self,asset_id:str,organization_id:str,**kwargs)->Asset:
+        asset=self.get_asset(asset_id,organization_id)
+        for key in ("name","target","description","status","asset_type"):
+            val=kwargs.get(key)
+            if val is not None: setattr(asset,key,val.strip() if isinstance(val,str) else val)
+        if kwargs.get("tags") is not None: asset.tags=json.dumps(kwargs["tags"])
+        self.db.commit(); self.db.refresh(asset); return asset
+    def delete_asset(self,asset_id:str,organization_id:str)->bool:
+        self.db.delete(self.get_asset(asset_id,organization_id)); self.db.commit(); return True
+    def archive_asset(self,asset_id:str,organization_id:str)->Asset:
+        a=self.get_asset(asset_id,organization_id); a.status="archived"; self.db.commit(); self.db.refresh(a); return a
+    def get_asset_stats(self,asset_id:str,organization_id:str)->Dict[str,Any]:
+        a=self.get_asset(asset_id,organization_id); ds=self.db.query(Domain).filter(Domain.asset_id==a.id).all()
+        return {"asset_id":a.id,"name":a.name,"total_domains":len(ds),"vulnerable_domains":sum(d.is_vulnerable for d in ds),
+                "total_subdomains":sum(len(d.subdomains) for d in ds),"risk_score":a.risk_score,"status":a.status,"last_scanned":a.updated_at}
+    def calculate_risk_score(self,asset_id:str)->int:
+        a=self.db.query(Asset).filter(Asset.id==asset_id).first(); return int(a.risk_score or 0) if a else 0
+    @staticmethod
+    def _domain_from_target(target:str)->Optional[str]:
+        from urllib.parse import urlparse
+        value=(target or "").strip().lower(); parsed=urlparse(value if "://" in value else f"//{value}"); host=(parsed.hostname or "").rstrip(".")
+        labels=host.split(".") if host else []
+        if len(labels)<2 or not labels[-1].isalpha() or len(labels[-1])<2 or any(not x or len(x)>63 for x in labels): return None
+        return host

@@ -73,6 +73,7 @@ The platform integrates industry-standard security tools, threat intelligence AP
 | **Threat Intelligence** | Shodan, Censys, VirusTotal | [discovery_service.py](backend/app/services/discovery_service.py) | Enriches discovered IPs/domains with external vulnerability feeds & reputational analysis. |
 | **Secret Detection** | Custom Regex Engine | [discovery_service.py](backend/app/services/discovery_service.py) | Scans cloud storage files and git repositories for leaked credentials/API keys. |
 | **Vulnerability Scanning** | `nuclei` | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Performs targeted, template-driven vulnerability assessments on services. |
+| **Service-Version Enrichment** | `nmap` + Gemini Search grounding | [gemini_service_assessment.py](backend/app/services/gemini_service_assessment.py) | Checks detected product versions, cited CVE applicability, and lifecycle status without replacing scanner evidence. |
 | **Shannon AI Pentester** | Google Gemini (or Open AI/Claude) | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Multi-phase agentic pentesting logic simulating crawling, exploit verification, and PoC generation. |
 
 ---
@@ -132,6 +133,40 @@ The application requires environment files (`.env`) inside both the `backend/` a
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_API_URL` | URL pointing to the backend FastAPI application. | `http://localhost:8000` |
 | `NEXT_PUBLIC_APP_NAME` | Title shown across the user interface. | `ASM Platform` |
+
+---
+
+## ✨ Grounded Gemini Service-Version Analysis
+
+Full Recon now sends unique Nmap product/version fingerprints to Gemini after the factual scanner results are committed. Gemini uses Google Search grounding and structured JSON output to classify each service as `current`, `outdated`, or `unknown`. Results are persisted separately from Nuclei findings and displayed in the scan detail severity graph.
+
+Classification rules are intentionally conservative:
+
+- A current version without an applicable cited CVE is shown as **Info**.
+- An outdated or end-of-life version with cited release evidence is shown as **Low** unless an applicable CVE has a higher CVSS-based severity.
+- Exact-version CVEs are categorized by CVSS: **Critical** 9.0–10.0, **High** 7.0–8.9, **Medium** 4.0–6.9, and **Low** 0.1–3.9.
+- Ambiguous banners, distro backports, missing versions, and unsupported claims are shown as **Info/unknown**, not as confirmed vulnerabilities.
+
+Configure these values in `backend/.env`:
+
+```env
+GEMINI_API_KEY=your_key_here
+GEMINI_SERVICE_ANALYSIS_ENABLED=True
+GEMINI_SERVICE_MODEL=gemini-3.6-flash
+GEMINI_SERVICE_BATCH_SIZE=8
+GEMINI_SERVICE_MAX_UNIQUE_SERVICES=50
+GEMINI_SERVICE_TIMEOUT_SECONDS=120
+```
+
+After pulling the change, rebuild the backend/frontend and apply the migration:
+
+```bash
+docker compose up -d --build
+docker compose exec backend alembic upgrade head
+```
+
+> [!IMPORTANT]
+> AI output is enrichment, not exploit confirmation. Keep Nuclei/manual validation as the authoritative evidence for reportable vulnerabilities.
 
 ---
 
@@ -201,9 +236,16 @@ All services (`asm_postgres`, `asm_redis`, `asm_backend`, `asm_frontend`, `asm_n
 
 #### 4. ProjectDiscovery Binaries Missing/Not Executing
 * **Error**: Backend logs report `subfinder command not found` or `nuclei not found`.
-* **Fix**: The `pd_installer` container compiles these tools during initial boot into the `pd_tools` volume. Check if the container ran successfully by running `docker logs asm_pd_installer`. If it failed, restart it:
+* **Fix**: Run the pinned rebuild and non-scanning verification workflow from
+  PowerShell. It preserves the `pd_tools` volume, recreates the installer, and
+  checks every enabled tool with a local version/help command:
+  ```powershell
+  .\scripts\rebuild_recon_tools.ps1
+  ```
+* **Verification only**: When the backend is already running, rerun just the
+  executable checks without launching a target scan:
   ```bash
-  docker compose start pd_installer
+  docker compose exec -T backend python check_recon_tools.py
   ```
 
 ---

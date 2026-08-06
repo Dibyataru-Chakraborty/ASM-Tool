@@ -1,77 +1,20 @@
 'use client'
-
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useAuth } from '@/lib/auth'
-import {
-  Shield, LayoutDashboard, Server, Radar, Bug, AlertTriangle,
-  FileText, Settings, LogOut, ChevronRight, Brain, Globe, Zap} from 'lucide-react'
-
-const navItems = [
-  { href: '/dashboard',         icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/assets',            icon: Server,          label: 'Assets' },
-  { href: '/scans',             icon: Radar,           label: 'Scans' },
-  { href: '/vulnerabilities',   icon: Bug,             label: 'Vulnerabilities' },
-  { href: '/alerts',            icon: AlertTriangle,   label: 'Alerts' },
-  { href: '/recon',             icon: Globe,           label: 'Recon Engine' },
-  { href: '/shannon',           icon: Zap,             label: 'AI Pentest' },
-  { href: '/ai-analysis',       icon: Brain,           label: 'AI Analysis' },
-  { href: '/reports',           icon: FileText,        label: 'Reports' },
-  { href: '/settings',          icon: Settings,        label: 'Settings' },
+import {usePathname} from 'next/navigation'
+import {useAuth} from '@/lib/auth'
+import {Activity,Bug,CalendarClock,FileText,History,LayoutDashboard,LogOut,Network,Radar,Server,Settings,Share2,Shield,ShieldAlert,Users,Building2,ArrowLeftCircle} from 'lucide-react'
+const asmSections=[
+ {label:'OVERVIEW',items:[{href:'/dashboard',icon:LayoutDashboard,label:'Attack Surface'}]},
+ {label:'ASSET INVENTORY',items:[{href:'/attack-surface',icon:Network,label:'Inventory'},{href:'/asset-map',icon:Share2,label:'Asset Map'},{href:'/changes',icon:Activity,label:'Changes'},{href:'/exposures',icon:ShieldAlert,label:'Exposures'}]},
+ {label:'MONITORING',adminOnly:true,items:[{href:'/assets',icon:Server,label:'Company Domains'},{href:'/recon',icon:Radar,label:'Discovery Engine'},{href:'/scheduler',icon:CalendarClock,label:'Continuous Monitoring'}]},
+ {label:'ASSESSMENT',items:[{href:'/vulnerabilities',icon:Bug,label:'Vulnerabilities'},{href:'/scans',icon:History,label:'Discovery History'},{href:'/reports',icon:FileText,label:'Reports'}]},
 ]
-
-export default function Sidebar() {
-  const pathname = usePathname()
-  const { user, logout } = useAuth()
-
-  return (
-    <aside className="fixed left-0 top-0 h-screen w-56 bg-[#0d1117] border-r border-[#21262d] flex flex-col z-50">
-      {/* Logo */}
-      <div className="px-4 py-5 border-b border-[#21262d]">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="p-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <Shield className="w-5 h-5 text-blue-400" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-100">ASM Platform</div>
-            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Enterprise</div>
-          </div>
-        </Link>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-0.5">
-        {navItems.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || pathname.startsWith(href + '/')
-          return (
-            <Link key={href} href={href} className={active ? 'sidebar-item-active' : 'sidebar-item'}>
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="text-sm font-medium">{label}</span>
-              {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-60" />}
-            </Link>
-          )
-        })}
-      </nav>
-
-      {/* User section */}
-      <div className="px-3 pb-4 border-t border-[#21262d] pt-3">
-        <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
-          <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
-            {user?.full_name?.[0]?.toUpperCase() || 'U'}
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-gray-200 truncate">{user?.full_name}</div>
-            <div className="text-[10px] text-gray-500 capitalize">{user?.role}</div>
-          </div>
-        </div>
-        <button
-          onClick={logout}
-          className="sidebar-item w-full text-red-400 hover:text-red-300 hover:bg-red-500/10"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="text-sm font-medium">Logout</span>
-        </button>
-      </div>
-    </aside>
-  )
-}
+export default function Sidebar(){const path=usePathname();const {user,logout,exitOrganization}=useAuth();const isSuper=user?.platform_role==='super_admin';const inTenant=!!user?.organization_id;const isAdmin=isSuper||user?.organization_role==='admin';
+ const sections=isSuper&&!inTenant?[{label:'PLATFORM',items:[{href:'/super-admin',icon:LayoutDashboard,label:'Platform Overview'},{href:'/super-admin/organizations',icon:Building2,label:'Organizations'}]}]:asmSections.filter(s=>!s.adminOnly||isAdmin);
+ return <aside className="fixed left-0 top-0 z-50 flex h-screen w-52 flex-col border-r border-[#21262d] bg-[#010409]">
+  <div className="border-b border-[#21262d] px-4 py-4"><div className="flex items-center gap-2"><Shield className="h-5 w-5 text-blue-400"/><div><p className="text-sm font-bold text-gray-100">ASM Platform</p><p className="text-[10px] text-gray-600">Multi-Tenant EASM</p></div></div>{inTenant&&<p className="mt-2 truncate text-[10px] text-cyan-400">{user?.organization_name}</p>}</div>
+  <nav className="flex-1 overflow-y-auto px-2 py-3">{sections.map((sec:any)=><div key={sec.label} className="mb-4"><p className="mb-1.5 px-3 text-[9px] font-semibold tracking-[.16em] text-gray-600">{sec.label}</p>{sec.items.map((it:any)=>{const Icon=it.icon;const active=path===it.href||path.startsWith(it.href+'/');return <Link key={it.href} href={it.href} className={active?'nav-active':'nav-item'}><Icon className="h-4 w-4 shrink-0 text-blue-400"/><span>{it.label}</span></Link>})}</div>)}
+   {inTenant&&isAdmin&&<Link href="/organization/users" className={path.startsWith('/organization/users')?'nav-active':'nav-item'}><Users className="h-4 w-4 text-indigo-400"/><span>Users</span></Link>}
+  </nav>
+  <div className="border-t border-[#21262d] px-2 pb-3 pt-2">{isSuper&&inTenant&&<button onClick={exitOrganization} className="nav-item w-full"><ArrowLeftCircle className="h-4 w-4"/><span>Platform Console</span></button>}{inTenant&&isAdmin&&<Link href="/settings" className="nav-item"><Settings className="h-4 w-4"/><span>Settings</span></Link>}<div className="px-3 py-2"><p className="truncate text-xs text-gray-300">{user?.full_name}</p><p className="text-[10px] text-gray-600">{isSuper?'Super Admin':user?.organization_role}</p></div><button onClick={logout} className="nav-item w-full text-red-400"><LogOut className="h-4 w-4"/><span>Logout</span></button></div>
+ </aside>}

@@ -23,7 +23,7 @@ class DashboardService:
         """Get risk dashboard summary for a user."""
         try:
             # Get all user assets
-            assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
+            assets = self.db.query(Asset).filter(Asset.organization_id == user_id).all()
             active_assets = [a for a in assets if a.status == "active"]
 
             # Count domains
@@ -70,7 +70,7 @@ class DashboardService:
             cutoff_date = datetime.utcnow() - timedelta(days=days)
             
             scans = self.db.query(Scan).join(Asset).filter(
-                Asset.user_id == user_id,
+                Asset.organization_id == user_id,
                 Scan.created_at >= cutoff_date
             ).order_by(Scan.created_at.desc()).all()
 
@@ -92,7 +92,7 @@ class DashboardService:
     def get_top_vulnerable_domains(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Get top vulnerable domains."""
         try:
-            assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
+            assets = self.db.query(Asset).filter(Asset.organization_id == user_id).all()
             vulnerable = self.db.query(Domain).filter(
                 Domain.asset_id.in_([a.id for a in assets]),
                 Domain.is_vulnerable == True
@@ -115,7 +115,7 @@ class DashboardService:
     def get_scan_statistics(self, user_id: str) -> Dict[str, Any]:
         """Get scan execution statistics."""
         try:
-            assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
+            assets = self.db.query(Asset).filter(Asset.organization_id == user_id).all()
             all_scans = self.db.query(Scan).filter(
                 Scan.asset_id.in_([a.id for a in assets])
             ).all()
@@ -149,7 +149,7 @@ class DashboardService:
     def get_domain_risk_heatmap(self, user_id: str) -> List[Dict[str, Any]]:
         """Get domain risk heatmap data."""
         try:
-            assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
+            assets = self.db.query(Asset).filter(Asset.organization_id == user_id).all()
             domains = self.db.query(Domain).filter(
                 Domain.asset_id.in_([a.id for a in assets])
             ).order_by(Domain.asset_id).all()

@@ -13,6 +13,7 @@ class Domain(Base, TimestampMixin):
     __tablename__ = "domains"
 
     id = Column(String(36), primary_key=True, default=get_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_id = Column(String(36), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
     
     # Domain info
@@ -49,6 +50,7 @@ class Domain(Base, TimestampMixin):
     ssl_certificates = relationship("SSLCertificate", back_populates="domain", cascade="all, delete-orphan")
 
     __table_args__ = (
+        Index("idx_domains_org_domain", "organization_id", "domain"),
         Index("idx_domains_asset_domain", "asset_id", "domain", unique=True),
         Index("idx_domains_tld", "tld"),
         Index("idx_domains_expiration", "expiration_date"),

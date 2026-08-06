@@ -10,20 +10,20 @@ from app.services.ai_vulnerability_service import AIVulnerabilityAnalyzer, Vulne
 from app.repositories.scan_repo import ScanRepository
 from app.models import Vulnerability
 from app.exceptions import ExternalServiceError, ValidationError
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_tenant_member
 from typing import Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/ai", tags=["ai-analysis"])
+router = APIRouter(prefix="/ai", tags=["ai-analysis"])
 
 
 @router.post("/analyze/vulnerability/{vulnerability_id}")
 async def analyze_vulnerability(
     vulnerability_id: str,
-    provider: str = Query("claude", regex="^(claude|openai|gemini|all)$"),
-    current_user = Depends(get_current_user),
+    provider: str = Query("claude", pattern="^(claude|openai|gemini|all)$"),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """
@@ -65,8 +65,8 @@ async def analyze_vulnerability(
 @router.post("/remediate/{vulnerability_id}")
 async def get_remediation_steps(
     vulnerability_id: str,
-    ai_provider: str = Query("claude", regex="^(claude|openai)$"),
-    current_user = Depends(get_current_user),
+    ai_provider: str = Query("claude", pattern="^(claude|openai)$"),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """
@@ -104,7 +104,7 @@ async def prioritize_vulnerabilities(
     severity_filter: Optional[str] = Query(None),
     limit: int = Query(10, ge=1, le=100),
     ai_provider: str = Query("claude"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """
@@ -145,7 +145,7 @@ async def prioritize_vulnerabilities(
 async def generate_executive_report(
     asset_id: str,
     ai_provider: str = Query("claude"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """
@@ -197,9 +197,9 @@ async def generate_executive_report(
 @router.get("/explain/{vulnerability_id}")
 async def explain_vulnerability(
     vulnerability_id: str,
-    audience: str = Query("technical", regex="^(technical|manager|developer)$"),
+    audience: str = Query("technical", pattern="^(technical|manager|developer)$"),
     ai_provider: str = Query("claude"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """
@@ -253,7 +253,7 @@ async def explain_vulnerability(
 
 @router.get("/providers")
 async def get_available_providers(
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """Get list of available AI providers and their status."""
@@ -292,7 +292,7 @@ async def get_available_providers(
 async def batch_analyze_vulnerabilities(
     vulnerability_ids: List[str],
     ai_provider: str = Query("claude"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_tenant_member()),
     db: Session = Depends(get_db)
 ):
     """

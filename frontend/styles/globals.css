@@ -2,46 +2,161 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --asm-bg: #0d1117;
+  --asm-chrome: #010409;
+  --asm-card: #161b22;
+  --asm-surface: #0d1117;
+  --asm-surface-raised: #21262d;
+  --asm-border: #30363d;
+  --asm-border-subtle: #21262d;
+  --asm-text: #f3f4f6;
+  --asm-text-secondary: #d1d5db;
+  --asm-text-muted: #9ca3af;
+  --asm-shadow: none;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --asm-bg: #f4f7fb;
+  --asm-chrome: #ffffff;
+  --asm-card: #ffffff;
+  --asm-surface: #f8fafc;
+  --asm-surface-raised: #e8eef6;
+  --asm-border: #cbd5e1;
+  --asm-border-subtle: #dbe3ee;
+  --asm-text: #0f172a;
+  --asm-text-secondary: #334155;
+  --asm-text-muted: #64748b;
+  --asm-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.04);
+}
+
 @layer base {
-  :root {
-    --background: 222 47% 8%;
-    --foreground: 213 31% 91%;
-    --card: 222 47% 11%;
-    --card-foreground: 213 31% 91%;
-    --border: 216 34% 17%;
-    --primary: 210 100% 56%;
-    --primary-foreground: 222 47% 8%;
-    --secondary: 222 47% 14%;
-    --muted: 223 47% 14%;
-    --muted-foreground: 215 20% 55%;
-    --accent: 216 34% 17%;
-    --destructive: 0 63% 55%;
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
+  * { @apply border-border box-border; }
+  html { @apply min-h-full; }
+  body {
+    @apply min-h-screen antialiased;
+    background-color: var(--asm-bg);
+    color: var(--asm-text);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  ::-webkit-scrollbar { @apply w-1; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background-color: color-mix(in srgb, var(--asm-text-muted) 55%, transparent);
   }
 }
 
-@layer base {
-  * { @apply border-border; }
-  body { @apply bg-[#0d1117] text-gray-100 antialiased; }
-  ::-webkit-scrollbar { @apply w-1.5; }
-  ::-webkit-scrollbar-track { @apply bg-gray-900; }
-  ::-webkit-scrollbar-thumb { @apply bg-gray-700 rounded-full; }
+@layer components {
+  .card {
+    @apply border rounded-xl;
+    background-color: var(--asm-card);
+    border-color: var(--asm-border);
+    box-shadow: var(--asm-shadow);
+  }
+  .input {
+    @apply w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition;
+    background-color: var(--asm-surface);
+    border-color: var(--asm-border);
+    color: var(--asm-text);
+  }
+  .input::placeholder { color: var(--asm-text-muted); }
+  .btn      { @apply px-4 py-2.5 rounded-lg text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-blue { @apply btn bg-blue-600 hover:bg-blue-700 text-white; }
+  .btn-primary {
+  @apply btn bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center justify-center gap-2;
 }
 
-@layer components {
-  .card { @apply bg-[#161b22] border border-[#30363d] rounded-xl; }
-  .badge-critical { @apply bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-xs font-medium; }
-  .badge-high { @apply bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded text-xs font-medium; }
-  .badge-medium { @apply bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded text-xs font-medium; }
-  .badge-low { @apply bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded text-xs font-medium; }
-  .badge-info { @apply bg-gray-500/10 text-gray-400 border border-gray-500/20 px-2 py-0.5 rounded text-xs font-medium; }
-  .btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed; }
-  .btn-secondary { @apply bg-[#21262d] hover:bg-[#30363d] text-gray-300 px-4 py-2 rounded-lg font-medium transition-all duration-200 border border-[#30363d]; }
-  .btn-danger { @apply bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg font-medium transition-all duration-200; }
-  .input { @apply bg-[#0d1117] border border-[#30363d] text-gray-100 placeholder-gray-500 rounded-lg px-3 py-2 w-full focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200; }
-  .table-row { @apply border-b border-[#21262d] hover:bg-[#1c2128] transition-colors duration-150; }
-  .sidebar-item { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-[#21262d] transition-all duration-200 cursor-pointer; }
-  .sidebar-item-active { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-blue-400 bg-blue-500/10 border border-blue-500/20; }
-  .stat-card { @apply card p-5 flex flex-col gap-2; }
+.btn-secondary {
+  @apply btn border inline-flex items-center justify-center gap-2;
+  background-color: var(--asm-surface-raised);
+  border-color: var(--asm-border);
+  color: var(--asm-text-secondary);
+}
+
+.btn-secondary:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--asm-surface-raised) 75%,
+    var(--asm-text-muted)
+  );
+}
+  .btn-gray {
+    @apply btn border;
+    background-color: var(--asm-surface-raised);
+    border-color: var(--asm-border);
+    color: var(--asm-text-secondary);
+  }
+  .btn-gray:hover { background-color: color-mix(in srgb, var(--asm-surface-raised) 75%, var(--asm-text-muted)); }
+  .btn-red  { @apply btn bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20; }
+  .tag-crit { @apply text-xs font-bold px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20; }
+  .tag-high { @apply text-xs font-bold px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20; }
+  .tag-med  { @apply text-xs font-bold px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20; }
+  .tag-low  { @apply text-xs font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20; }
+  .tag-info { @apply text-xs font-bold px-2 py-0.5 rounded bg-gray-500/10 text-gray-400 border border-gray-500/20; }
+  .nav-item { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition cursor-pointer; color: var(--asm-text-muted); }
+  .nav-item:hover { color: var(--asm-text); background-color: var(--asm-surface-raised); }
+  .nav-active { @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-blue-400 bg-blue-500/10 border border-blue-500/20; }
+  .theme-toggle {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border transition focus:outline-none focus:ring-2 focus:ring-blue-500/40;
+    color: var(--asm-text-secondary);
+    background-color: var(--asm-surface);
+    border-color: var(--asm-border);
+  }
+  .theme-toggle:hover {
+    color: #3b82f6;
+    background-color: var(--asm-surface-raised);
+  }
+}
+
+@layer utilities {
+  html[data-theme='light'] .bg-\[\#010409\] { background-color: var(--asm-chrome) !important; }
+  html[data-theme='light'] .bg-\[\#0d1117\] { background-color: var(--asm-surface) !important; }
+  html[data-theme='light'] .bg-\[\#161b22\] { background-color: var(--asm-card) !important; }
+  html[data-theme='light'] .bg-\[\#21262d\] { background-color: var(--asm-surface-raised) !important; }
+  html[data-theme='light'] .bg-\[\#30363d\] { background-color: var(--asm-border-subtle) !important; }
+
+  html[data-theme='light'] .border-\[\#21262d\],
+  html[data-theme='light'] .border-\[\#30363d\],
+  html[data-theme='light'] .border-border {
+    border-color: var(--asm-border-subtle) !important;
+  }
+
+  html[data-theme='light'] .divide-\[\#21262d\] > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--asm-border-subtle) !important;
+  }
+
+  html[data-theme='light'] .text-gray-100 { color: #0f172a !important; }
+  html[data-theme='light'] .text-gray-200 { color: #1e293b !important; }
+  html[data-theme='light'] .text-gray-300 { color: #334155 !important; }
+  html[data-theme='light'] .text-gray-400 { color: #475569 !important; }
+  html[data-theme='light'] .text-gray-500 { color: #64748b !important; }
+  html[data-theme='light'] .text-gray-600 { color: #64748b !important; }
+  html[data-theme='light'] .placeholder-gray-600::placeholder { color: #94a3b8 !important; }
+
+  html[data-theme='light'] .hover\:bg-\[\#1c2128\]:hover,
+  html[data-theme='light'] .hover\:bg-\[\#21262d\]:hover,
+  html[data-theme='light'] .hover\:bg-\[\#30363d\]:hover {
+    background-color: #eef3f8 !important;
+  }
+
+  html[data-theme='light'] .hover\:text-gray-100:hover,
+  html[data-theme='light'] .hover\:text-gray-200:hover,
+  html[data-theme='light'] .hover\:text-gray-300:hover {
+    color: #0f172a !important;
+  }
+}
+
+/*
+ * Keep interactive rows and surfaces light even when a page still carries
+ * one of the original GitHub-dark hover utility classes. This intentionally
+ * sits outside Tailwind's layers so it wins over generated hover utilities.
+ */
+html[data-theme='light'] tbody tr:hover,
+html[data-theme='light'] [class*='hover:bg-[#1c2128]']:hover,
+html[data-theme='light'] [class*='hover:bg-[#21262d]']:hover,
+html[data-theme='light'] [class*='hover:bg-[#30363d]']:hover {
+  background-color: #eef4fb !important;
 }

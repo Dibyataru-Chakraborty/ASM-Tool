@@ -24,27 +24,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
-@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    request: UserRegisterRequest,
-    db: Session = Depends(get_db)
-):
-    """Register a new user."""
-    try:
-        auth_service = AuthService(db)
-        result = auth_service.register(
-            email=request.email,
-            password=request.password,
-            full_name=request.full_name
-        )
-        return result
-    except ConflictError as e:
-        raise HTTPException(status_code=409, detail=e.message)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.message)
-    except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Registration failed")
+@router.post("/register", status_code=status.HTTP_403_FORBIDDEN)
+async def register():
+    """Self-registration is disabled in multi-tenant mode."""
+    raise HTTPException(
+        status_code=403,
+        detail="Self-registration is disabled. Contact your organization Admin or platform Super Admin.",
+    )
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -94,7 +80,11 @@ async def get_current_user_info(
         "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
-        "role": current_user.role,
+        "role": current_user.organization_role or current_user.platform_role,
+        "platform_role": current_user.platform_role,
+        "organization_id": current_user.current_organization_id,
+        "organization_name": current_user.current_organization_name,
+        "organization_role": current_user.organization_role,
         "is_active": current_user.is_active,
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at.isoformat(),

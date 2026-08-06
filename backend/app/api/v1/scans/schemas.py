@@ -15,16 +15,27 @@ class ScanInitiateRequest(BaseModel):
     scan_type: str = Field(default="discovery", pattern="^(discovery|ssl|screenshot|dns|port_scan|tech_detect|full|quick|vuln_scan|ssl_check)$")
 
 
+class TriggerScanRequest(BaseModel):
+    """Trigger a real scan from the asset inventory."""
+    asset_id: str
+    scan_type: str = Field(default="discovery", pattern="^(discovery|full|quick|vuln_scan)$")
+
+
 class ScanResponse(BaseModel):
     """Scan in responses."""
     id: str
+    reference_id: str
     asset_id: str
     scan_type: str
     status: str
+    target_domain: Optional[str] = None
+    retry_count: int
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     discovered_count: int
     vulnerable_count: int
+    current_tool: Optional[str] = None
+    progress: int = 0
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime

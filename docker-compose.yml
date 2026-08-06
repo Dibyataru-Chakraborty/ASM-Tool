@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   postgres:
@@ -36,6 +34,29 @@ services:
     networks:
       - asm_network
 
+  pd_installer:
+    build:
+      context: ./pd-installer
+      dockerfile: Dockerfile
+    container_name: asm_pd_installer
+    restart: "no"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      - pd_tools:/usr/local/pd_tools
+    networks:
+      - asm_network
+
+  scan_archive_initializer:
+    image: alpine:3.20
+    container_name: asm_scan_archive_initializer
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /scan_archives && chown -R 1000:1000 /scan_archives"]
+    volumes:
+      - scan_archives:/scan_archives
+    networks:
+      - asm_network
+
   backend:
     build:
       context: ./backend
@@ -49,49 +70,21 @@ services:
     volumes:
       - ./backend:/app
       - screenshots:/app/screenshots
+      - scan_archives:/app/scan_archives
       - pd_tools:/usr/local/pd_tools
+      - nuclei_templates:/home/appuser/nuclei-templates
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      pd_installer:
+        condition: service_completed_successfully
+      scan_archive_initializer:
+        condition: service_completed_successfully
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    networks:
-      - asm_network
-
-
-  pd_installer:
-    image: alpine:latest
-    container_name: asm_pd_installer
-    restart: "no"
-    volumes:
-      - pd_tools:/pd_tools
-    command: >
-      sh -c "
-        apk add --no-cache wget tar &&
-        cd /tmp &&
-        echo 'Downloading subfinder...' &&
-        wget -q https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_linux_amd64.zip -O subfinder.zip &&
-        unzip -q subfinder.zip subfinder && mv subfinder /pd_tools/ &&
-        echo 'Downloading dnsx...' &&
-        wget -q https://github.com/projectdiscovery/dnsx/releases/latest/download/dnsx_linux_amd64.zip -O dnsx.zip &&
-        unzip -q dnsx.zip dnsx && mv dnsx /pd_tools/ &&
-        echo 'Downloading naabu...' &&
-        wget -q https://github.com/projectdiscovery/naabu/releases/latest/download/naabu_linux_amd64.zip -O naabu.zip &&
-        unzip -q naabu.zip naabu && mv naabu /pd_tools/ &&
-        echo 'Downloading httpx...' &&
-        wget -q https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_linux_amd64.zip -O httpx.zip &&
-        unzip -q httpx.zip httpx && mv httpx /pd_tools/ &&
-        echo 'Downloading nuclei...' &&
-        wget -q https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip -O nuclei.zip &&
-        unzip -q nuclei.zip nuclei && mv nuclei /pd_tools/ &&
-        echo 'Downloading gowitness...' &&
-        wget -q https://github.com/sensepost/gowitness/releases/latest/download/gowitness-linux-amd64 -O /pd_tools/gowitness &&
-        chmod +x /pd_tools/* &&
-        echo 'All ProjectDiscovery tools installed successfully!'
-      "
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks:
       - asm_network
 
@@ -129,6 +122,7 @@ services:
 volumes:
   postgres_data:
   screenshots:
+  scan_archives:
   pd_tools:
   nuclei_templates:
 

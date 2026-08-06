@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
 
+    # Multi-tenant bootstrap. Set these once to create the initial Super Admin.
+    bootstrap_super_admin_email: Optional[str] = None
+    bootstrap_super_admin_password: Optional[str] = None
+    bootstrap_super_admin_name: str = "Platform Super Admin"
+
     # RBAC Roles
     rbac_enabled: bool = True
     default_role: str = "analyst"  # admin, analyst, viewer
@@ -56,6 +61,94 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://redis:6379/1"
     celery_result_backend: str = "redis://redis:6379/2"
     celery_task_timeout: int = 3600  # 1 hour
+
+    # Persistent scan scheduler
+    scheduler_poll_seconds: int = 15
+    max_concurrent_scans: int = 5
+
+    # Immutable, compact historical snapshots. This directory is mounted as a
+    # dedicated Docker volume and files are never removed automatically.
+    scan_archive_dir: str = "/app/scan_archives"
+    scan_archive_compression_level: int = 9
+
+    # Real scanner process limits. Set NUCLEI_SCAN_TIMEOUT_SECONDS=0 to let
+    # Nuclei run without an overall process deadline.
+    nuclei_scan_timeout_seconds: int = 7200
+    
+    nuclei_rate_limit: int = 100
+    nuclei_concurrency: int = 35
+    nuclei_bulk_size: int = 35
+    nuclei_request_timeout: int = 10
+    nuclei_retries: int = 1
+    # Scan origins first, then a bounded number of discovered endpoints. A
+    # full URL corpus multiplied by every template can take many hours.
+    nuclei_max_targets: int = 100
+    # Informational templates identify technologies/configuration observations,
+    # not actionable vulnerabilities. They remain opt-in.
+    nuclei_include_info_findings: bool = False
+    # Scanner executable locations and startup validation. The installer and
+    # backend mount the same named volume at pd_tools_path, which keeps virtual
+    # environment shebangs valid across both containers and across rebuilds.
+    pd_tools_path: str = "/usr/local/pd_tools"
+    nmap_path: str = "/usr/bin/nmap"
+    chromium_path: str = "/usr/bin/chromium"
+    recon_tool_probe_on_scan_start: bool = True
+    recon_tool_probe_timeout_seconds: int = 15
+
+    # Extended reconnaissance tools. Passive and low-impact discovery tools are
+    # enabled by default. Duplicate, legacy, API-dependent, or active testing
+    # tools remain opt-in so a normal recon scan does not overload the target.
+    sublist3r_enabled: bool = True
+    uncover_enabled: bool = True
+    uncover_engine: str = "shodan-idb"
+    uncover_limit: int = 50
+
+    waybackurls_enabled: bool = True
+    katana_enabled: bool = True
+    katana_depth: int = 2
+    paramspider_enabled: bool = True
+    max_discovered_urls: int = 2000
+
+    dirsearch_enabled: bool = True
+    dirsearch_max_targets: int = 5
+    dirsearch_timeout_seconds: int = 240
+    dirsearch_max_rate: int = 20
+
+    dirb_enabled: bool = True
+    dirb_max_targets: int = 3
+    dirbuster_enabled: bool = True
+    dirbuster_max_targets: int = 2
+
+    wappalyzer_enabled: bool = True
+    wappalyzer_max_targets: int = 20
+
+    wpscan_enabled: bool = True
+    wpscan_api_token: Optional[str] = None
+    wpscan_max_targets: int = 5
+    wpscan_timeout_seconds: int = 600
+
+    droopescan_enabled: bool = True
+    droopescan_max_targets: int = 5
+    droopescan_timeout_seconds: int = 300
+
+    secretfinder_enabled: bool = True
+    secretfinder_max_javascript_urls: int = 30
+
+    xsstrike_enabled: bool = True
+    xsstrike_max_targets: int = 10
+    xsstrike_timeout_seconds: int = 180
+    
+    xssvibes_enabled: bool = True
+    xssvibes_max_targets: int = 20
+    xssvibes_threads: int = 5
+    xssvibes_timeout_seconds: int = 300
+
+    nikto_enabled: bool = True
+    nikto_max_targets: int = 5
+    nikto_timeout_seconds: int = 420
+
+    lazyrecon_enabled: bool = True
+    lazyrecon_timeout_seconds: int = 1800
 
     # Rate Limiting
     rate_limit_enabled: bool = True
@@ -83,6 +176,11 @@ class Settings(BaseSettings):
     claude_api_key: Optional[str] = None  # Anthropic Claude
     openai_api_key: Optional[str] = None  # OpenAI GPT-4
     gemini_api_key: Optional[str] = None  # Google Gemini
+    gemini_service_analysis_enabled: bool = True
+    gemini_service_model: str = "gemini-3.6-flash"
+    gemini_service_batch_size: int = 8
+    gemini_service_max_unique_services: int = 50
+    gemini_service_timeout_seconds: int = 120
     cohere_api_key: Optional[str] = None  # Cohere
     
     # Threat Intelligence APIs (Phase 4)
@@ -102,6 +200,18 @@ class Settings(BaseSettings):
     
     # Azure Teams (Phase 6)
     azure_webhook_url: Optional[str] = None
+
+    # SMTP email notifications
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_require_auth: bool = True
+    smtp_timeout_seconds: int = 20
+    frontend_url: str = "http://localhost:3000"
     
     # AWS (Phase 5)
     aws_access_key_id: Optional[str] = None

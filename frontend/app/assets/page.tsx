@@ -1,409 +1,62 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Building2, KeyRound, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
-import { AuthProvider } from '@/lib/auth'
-import { useAssets } from '@/hooks/useAssets'
-import api from '@/lib/api'
-import {
-  StatCard, LoadingState, ErrorState, StatusBadge, Modal,
-  ConfirmDialog, Table, Pagination, EmptyState
-} from '@/components/ui'
-import { RiskGauge } from '@/components/charts/RiskChart'
-import { Plus, Server, Archive, Trash2, Eye, RefreshCw, Globe } from 'lucide-react'
-import type { Asset } from '@/types'
+import { AuthProvider, useAuth } from '@/lib/auth'
+import asm from '@/lib/api'
 
-const ASSET_TYPES = ['domain', 'ip_range', 'web_application', 'mobile_app', 'cloud_service'] as const
-
-type AssetType = (typeof ASSET_TYPES)[number]
-
-function AssetDetailsModal({ assetId, onClose }: { assetId: string; onClose: () => void }) {
-  const [assetDetails, setAssetDetails] = useState<any>(null)
-  const [subdomains, setSubdomains] = useState<any[]>([])
-  const [screenshots, setScreenshots] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'overview' | 'subdomains' | 'screenshots'>('overview')
-
-  useEffect(() => {
-    if (!assetId) return
-    setLoading(true)
-    Promise.all([
-      api.getAsset(assetId),
-      api.getAssetSubdomains(assetId).catch(() => ({ subdomains: [], total: 0 })),
-      api.getAssetScreenshots(assetId).catch(() => ({ screenshots: [], total: 0 }))
-    ])
-      .then(([assetRes, subRes, screenRes]) => {
-        setAssetDetails(assetRes)
-        setSubdomains(subRes.subdomains || [])
-        setScreenshots(screenRes.screenshots || [])
-      })
-      .catch(err => setError(err.response?.data?.detail || 'Failed to load details'))
-      .finally(() => setLoading(false))
-  }, [assetId])
-
-  if (loading) return <div className="py-8 text-center text-xs text-gray-400">Loading details...</div>
-  if (error) return <div className="py-8 text-center text-xs text-red-400">{error}</div>
-  if (!assetDetails) return null
-
-  return (
-    <div className="space-y-4">
-      {/* Tabs */}
-      <div className="flex border-b border-[#21262d] gap-2 mb-2">
-        {(['overview', 'subdomains', 'screenshots'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 text-xs font-semibold border-b-2 capitalize transition ${
-              activeTab === tab
-                ? 'border-blue-500 text-gray-100'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'overview' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-0.5">Asset Type</p>
-              <p className="text-sm font-semibold text-gray-200 capitalize">{assetDetails.asset_type.replace('_', ' ')}</p>
-            </div>
-            <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-0.5">Status</p>
-              <div className="mt-0.5"><StatusBadge status={assetDetails.status} /></div>
-            </div>
-            <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-0.5">Risk Score</p>
-              <div className="mt-1"><RiskGauge score={assetDetails.risk_score} /></div>
-            </div>
-            <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-0.5">Registered On</p>
-              <p className="text-sm font-medium text-gray-200 mt-0.5">{new Date(assetDetails.created_at).toLocaleString()}</p>
-            </div>
-          </div>
-
-          {assetDetails.description && (
-            <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-1">Description</p>
-              <p className="text-xs text-gray-300 whitespace-pre-wrap">{assetDetails.description}</p>
-            </div>
-          )}
-
-          <div className="border-t border-[#21262d] pt-3">
-            <p className="text-xs font-semibold text-gray-200 mb-2">Discovery & Scan Statistics</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-blue-400">{assetDetails.total_domains || 0}</p>
-                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Domains</p>
-              </div>
-              <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-purple-400">{assetDetails.total_subdomains || 0}</p>
-                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Subdomains</p>
-              </div>
-              <div className="bg-[#161b22] border border-[#21262d] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-red-400">{assetDetails.vulnerable_domains || 0}</p>
-                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Vulnerable</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'subdomains' && (
-        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-          {subdomains.length === 0 ? (
-            <p className="text-xs text-gray-500 text-center py-8">No subdomains discovered yet. Run a scan to discover subdomains.</p>
-          ) : (
-            subdomains.map(sub => (
-              <div key={sub.id} className="bg-[#161b22] border border-[#21262d] rounded-lg p-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-200 font-mono">{sub.subdomain}</span>
-                  <StatusBadge status={sub.is_responsive ? 'active' : 'inactive'} />
-                </div>
-                <div className="flex flex-wrap gap-1.5 items-center text-[10px] text-gray-400">
-                  <span>IP: {sub.ip_addresses?.join(', ') || 'N/A'}</span>
-                  {sub.response_status_code && (
-                    <span className="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">
-                      HTTP {sub.response_status_code}
-                    </span>
-                  )}
-                  {sub.ports && sub.ports.length > 0 && (
-                    <div className="flex gap-1 items-center ml-auto">
-                      <span className="text-[9px] uppercase tracking-wider text-gray-500">Ports:</span>
-                      {sub.ports.map((p: number) => (
-                        <span key={p} className="bg-blue-500/10 text-blue-400 border border-blue-500/25 px-1 py-0.2 rounded font-mono">
-                          {p}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {activeTab === 'screenshots' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-          {screenshots.length === 0 ? (
-            <div className="col-span-full py-8 text-center text-xs text-gray-500">
-              No page screenshots captured. Scans must find open HTTP/HTTPS services.
-            </div>
-          ) : (
-            screenshots.map(screen => (
-              <div key={screen.id} className="bg-[#161b22] border border-[#21262d] rounded-lg overflow-hidden flex flex-col">
-                {/* Simulated Browser Frame Header */}
-                <div className="bg-[#21262d] px-2.5 py-1.5 flex items-center gap-1.5 border-b border-[#30363d]">
-                  <div className="flex gap-1">
-                    <span className="w-1 h-1 rounded-full bg-red-500" />
-                    <span className="w-1 h-1 rounded-full bg-yellow-500" />
-                    <span className="w-1 h-1 rounded-full bg-green-500" />
-                  </div>
-                  <div className="bg-[#0d1117] text-[8px] text-gray-400 px-2 py-0.5 rounded flex-1 truncate font-mono text-center">
-                    {screen.url}
-                  </div>
-                </div>
-                {/* Simulated Screenshot Thumbnail */}
-                <div className="aspect-video bg-gradient-to-br from-blue-900/30 to-purple-900/30 flex flex-col items-center justify-center p-3 text-center border-b border-[#30363d] relative">
-                  <div className="absolute top-2 right-2 bg-black/60 px-1.5 py-0.5 rounded text-[8px] font-mono text-green-400 font-bold border border-green-500/20">
-                    HTTP {screen.status_code}
-                  </div>
-                  <p className="text-[10px] font-semibold text-gray-200 line-clamp-1 mb-1">{screen.title || 'Landing Page'}</p>
-                  <p className="text-[8px] text-gray-500 uppercase tracking-widest font-mono">Port {screen.port}</p>
-                </div>
-                {/* Footer details */}
-                <div className="p-2.5 space-y-1.5 flex-1 flex flex-col justify-between">
-                  <div className="flex flex-wrap gap-1">
-                    {screen.technologies?.map((tech: string) => (
-                      <span key={tech} className="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded text-[9px] font-medium">
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
-                  <a
-                    href={screen.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[9px] text-blue-400 hover:text-blue-300 font-medium inline-block text-right self-end mt-1"
-                  >
-                    Open Target ↗
-                  </a>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      <div className="flex pt-2">
-        <button type="button" className="btn-secondary text-sm flex-1" onClick={onClose}>Close</button>
-      </div>
-    </div>
-  )
+type Target = {
+  id:string; name:string; target?:string; description?:string; asset_type:string;
+  tags:string[]; risk_score:number; scan_count:number; last_scanned_at?:string
 }
 
-function AssetForm({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
-  const [form, setForm] = useState<{ name: string; description: string; asset_type: AssetType }>({ name: '', description: '', asset_type: 'domain' })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      await api.createAsset(form)
-      onSave()
-      onClose()
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create asset')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <div>
-        <label className="block text-xs font-medium text-gray-400 mb-1.5">Asset Name *</label>
-        <input className="input" placeholder="example.com" required
-          value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-400 mb-1.5">Type *</label>
-        <select className="input" value={form.asset_type}
-          onChange={e => setForm(f => ({ ...f, asset_type: e.target.value as AssetType }))}>
-          {ASSET_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-400 mb-1.5">Description</label>
-        <textarea className="input resize-none" rows={3} placeholder="Optional description..."
-          value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-      </div>
-      <div className="flex gap-3 pt-2">
-        <button type="button" className="btn-secondary text-sm flex-1" onClick={onClose}>Cancel</button>
-        <button type="submit" disabled={loading} className="btn-primary text-sm flex-1">
-          {loading ? 'Creating...' : 'Create Asset'}
-        </button>
-      </div>
+function DomainModal({onClose,onSaved}:{onClose:()=>void;onSaved:()=>void}){
+  const [domain,setDomain]=useState(''); const [description,setDescription]=useState('')
+  const [saving,setSaving]=useState(false); const [error,setError]=useState('')
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError('');try{
+    const clean=domain.trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'').toLowerCase()
+    await asm.createAsset({name:clean,target:clean,description,asset_type:'domain',tags:[]}); onSaved(); onClose()
+  }catch(err:any){setError(err.response?.data?.detail||'Could not add company domain')}finally{setSaving(false)}}
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/60" onClick={onClose}/><div className="card relative w-full max-w-lg p-5 shadow-2xl">
+    <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-semibold text-gray-200">Add Company Domain</h2><p className="mt-1 text-[10px] text-gray-600">This domain becomes an approved target inside your organization only.</p></div><button onClick={onClose} className="text-gray-600 hover:text-gray-300"><X className="h-4 w-4"/></button></div>
+    {error&&<div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">{error}</div>}
+    <form onSubmit={submit} className="space-y-3">
+      <div><label className="mb-1 block text-xs text-gray-500">Company domain *</label><input className="input font-mono" required value={domain} onChange={e=>setDomain(e.target.value)} placeholder="example.com"/><p className="mt-1 text-[10px] text-gray-600">Only add domains your organization owns or is authorized to monitor.</p></div>
+      <div><label className="mb-1 block text-xs text-gray-500">Description</label><textarea className="input h-20 resize-none" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Production website, subsidiary, customer portal…"/></div>
+      <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="btn-gray flex-1">Cancel</button><button className="btn-blue flex-1" disabled={saving}>{saving?'Adding…':'Add Domain'}</button></div>
     </form>
-  )
+  </div></div>
 }
 
-function AssetsContent() {
-  const [page, setPage] = useState(0)
-  const { data, loading, error, refetch } = useAssets(page, 10)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [archiveId, setArchiveId] = useState<string | null>(null)
-  const [viewId, setViewId] = useState<string | null>(null)
-
-  const handleDelete = async () => {
-    if (!deleteId) return
-    await api.deleteAsset(deleteId)
-    refetch()
-  }
-
-  const handleArchive = async () => {
-    if (!archiveId) return
-    await api.archiveAsset(archiveId)
-    refetch()
-  }
-
-  if (loading) return <LoadingState text="Loading assets..." />
-  if (error) return <ErrorState message={error} />
-
-  const assets = data?.items || []
-  const total = data?.total || 0
-
-  return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-semibold text-gray-100">Asset Inventory</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{total} assets registered</p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn-secondary text-sm flex items-center gap-2" onClick={refetch}>
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </button>
-          <button className="btn-primary text-sm flex items-center gap-2" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4" /> Add Asset
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total"    value={total}                                               icon={Server} color="blue" />
-        <StatCard label="Active"   value={assets.filter(a => a.status === 'active').length}    icon={Globe}  color="green" />
-        <StatCard label="Archived" value={assets.filter(a => a.status === 'archived').length}  color="yellow" />
-        <StatCard label="Avg Risk" value={`${(assets.reduce((s, a) => s + a.risk_score, 0) / (assets.length || 1)).toFixed(0)}/100`} color="red" />
-      </div>
-
-      {/* Table */}
-      <div className="card">
-        {assets.length === 0 ? (
-          <EmptyState
-            title="No assets found"
-            description="Add your first asset to start monitoring"
-            action={
-              <button className="btn-primary text-sm" onClick={() => setCreateOpen(true)}>
-                <Plus className="w-4 h-4 mr-1 inline" /> Add Asset
-              </button>
-            }
-          />
-        ) : (
-          <>
-            <Table headers={['Asset', 'Type', 'Status', 'Risk Score', 'Created', 'Actions']}>
-              {assets.map((a: Asset) => (
-                <tr key={a.id} className="table-row">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                        <Server className="w-3.5 h-3.5 text-blue-400" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-200">{a.name}</p>
-                        {a.description && <p className="text-xs text-gray-500 truncate max-w-[200px]">{a.description}</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs text-gray-400 capitalize">{a.asset_type.replace('_', ' ')}</span>
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
-                  <td className="px-4 py-3 w-36">
-                    <RiskGauge score={a.risk_score} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs text-gray-500">
-                      {new Date(a.created_at).toLocaleDateString()}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setViewId(a.id)}
-                        className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition"
-                        title="View Details">
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => setArchiveId(a.id)}
-                        className="p-1.5 text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/10 rounded transition"
-                        title="Archive">
-                        <Archive className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => setDeleteId(a.id)}
-                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition"
-                        title="Delete">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </Table>
-            <Pagination page={page} total={total} limit={10} onChange={setPage} />
-          </>
-        )}
-      </div>
-
-      {/* Modals */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add New Asset">
-        <AssetForm onClose={() => setCreateOpen(false)} onSave={refetch} />
-      </Modal>
-
-      <Modal open={!!viewId} onClose={() => setViewId(null)} title="Asset Details">
-        {viewId && <AssetDetailsModal assetId={viewId} onClose={() => setViewId(null)} />}
-      </Modal>
-
-      <ConfirmDialog
-        open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete}
-        title="Delete Asset" danger
-        message="Are you sure you want to delete this asset? This action cannot be undone and will delete all associated data."
-      />
-      <ConfirmDialog
-        open={!!archiveId} onClose={() => setArchiveId(null)} onConfirm={handleArchive}
-        title="Archive Asset"
-        message="Are you sure you want to archive this asset? It will be hidden from active monitoring."
-      />
-    </div>
-  )
+function SeedsPanel({organizationId}:{organizationId:string}){
+  const [seeds,setSeeds]=useState<any[]>([]); const [value,setValue]=useState(''); const [type,setType]=useState('domain')
+  const [loading,setLoading]=useState(true); const [error,setError]=useState('')
+  const load=useCallback(()=>{setLoading(true);asm.getDiscoverySeeds(organizationId).then(d=>setSeeds(d.seeds||[])).catch((e:any)=>setError(e.response?.data?.detail||'Could not load seeds')).finally(()=>setLoading(false))},[organizationId])
+  useEffect(()=>{load()},[load])
+  const add=async(e:React.FormEvent)=>{e.preventDefault();if(!value.trim())return;setError('');try{await asm.createDiscoverySeed({organization_id:organizationId,seed_type:type,value:value.trim(),is_primary:false});setValue('');load()}catch(err:any){setError(err.response?.data?.detail||'Could not add discovery seed')}}
+  const remove=async(id:string)=>{try{await asm.deleteDiscoverySeed(id);load()}catch(err:any){setError(err.response?.data?.detail||'Could not remove seed')}}
+  return <div className="card overflow-hidden"><div className="flex items-center gap-2 border-b border-[#21262d] px-4 py-3"><KeyRound className="h-4 w-4 text-cyan-400"/><div><p className="text-xs font-semibold text-gray-300">Organization Discovery Seeds</p><p className="text-[10px] text-gray-600">Known starting points for continuous attack-surface discovery.</p></div></div>
+    <div className="p-4">{error&&<div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">{error}</div>}
+      <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-[140px_1fr_auto]"><select className="input" value={type} onChange={e=>setType(e.target.value)}><option value="domain">Domain</option><option value="ip">IP</option><option value="cidr">CIDR</option><option value="asn">ASN</option></select><input className="input font-mono" value={value} onChange={e=>setValue(e.target.value)} placeholder={type==='domain'?'subsidiary.example.com':type==='asn'?'AS64500':'203.0.113.0/24'}/><button className="btn-blue flex items-center justify-center gap-1"><Plus className="h-4 w-4"/>Add</button></form>
+      <div className="max-h-72 overflow-y-auto rounded-lg border border-[#30363d]">{loading?<div className="py-10 text-center text-xs text-gray-600">Loading seeds…</div>:seeds.length===0?<div className="py-10 text-center text-xs text-gray-600">No organization-level seeds yet.</div>:<div className="divide-y divide-[#21262d]">{seeds.map(seed=><div key={seed.id} className="flex items-center gap-3 px-3 py-3"><KeyRound className="h-4 w-4 text-cyan-400"/><div className="min-w-0 flex-1"><p className="truncate font-mono text-xs text-gray-300">{seed.value}</p><p className="mt-1 text-[10px] uppercase text-gray-600">{seed.seed_type} · {(seed.ownership_status||'confirmed').replaceAll('_',' ')} · {Math.round((seed.confidence_score||0)*100)}% confidence</p></div>{seed.is_primary?<span className="rounded border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] text-blue-400">PRIMARY</span>:<button type="button" onClick={()=>remove(seed.id)} className="text-gray-600 hover:text-red-400"><Trash2 className="h-4 w-4"/></button>}</div>)}</div>}</div>
+    </div></div>
 }
 
-export default function AssetsPage() {
-  return (
-    <AuthProvider>
-      <AppLayout>
-        <AssetsContent />
-      </AppLayout>
-    </AuthProvider>
-  )
+function CompanyDomainsContent(){
+  const {user}=useAuth(); const organizationId=user?.organization_id||''
+  const [targets,setTargets]=useState<Target[]>([]); const [loading,setLoading]=useState(true); const [createOpen,setCreateOpen]=useState(false); const [working,setWorking]=useState(false); const [message,setMessage]=useState('')
+  const load=useCallback(async()=>{setLoading(true);try{const d=await asm.getAssets({limit:100});setTargets(d.assets||[])}finally{setLoading(false)}},[])
+  useEffect(()=>{load()},[load])
+  const rebuild=async()=>{if(!organizationId)return;setWorking(true);setMessage('');try{const r=await asm.rebuildAttackSurface(organizationId);setMessage(r.total?`Attack surface rebuilt from ${r.total} completed domain scan(s).`:'No completed scan is available yet. Run Discovery first.')}catch(e:any){setMessage(e.response?.data?.detail||'Rebuild failed')}finally{setWorking(false)}}
+  const del=async(target:Target)=>{if(!confirm(`Remove ${target.target||target.name} and its associated scan history?`))return;await asm.deleteAsset(target.id);load()}
+  return <AppLayout><div className="space-y-4">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-lg font-bold text-gray-100">Company Domains & Discovery Seeds</h1><p className="mt-1 text-xs text-gray-500">{user?.organization_name||'Your organization'} controls this scope. Domains and seeds added here cannot be seen by another tenant.</p></div><div className="flex gap-2"><button className="btn-gray flex items-center gap-1.5 text-xs" onClick={rebuild} disabled={!organizationId||working}><RefreshCw className={`h-4 w-4 ${working?'animate-spin':''}`}/>Rebuild Inventory</button><button className="btn-blue flex items-center gap-1.5 text-xs" onClick={()=>setCreateOpen(true)}><Plus className="h-4 w-4"/>Add Domain</button></div></div>
+    {message&&<div className="rounded-lg border border-[#30363d] bg-[#161b22] px-4 py-2 text-xs text-gray-300">{message}</div>}
+    <div className="card overflow-hidden"><div className="flex items-center gap-2 border-b border-[#21262d] px-4 py-3"><Building2 className="h-4 w-4 text-indigo-400"/><p className="text-xs font-semibold text-gray-300">{targets.length} approved target{targets.length===1?'':'s'}</p></div>{loading?<div className="py-14 text-center text-xs text-gray-600">Loading company domains…</div>:targets.length===0?<div className="py-14 text-center"><Building2 className="mx-auto mb-3 h-8 w-8 text-gray-600"/><p className="text-sm text-gray-400">No company domains yet.</p><p className="mt-1 text-xs text-gray-600">Add the first approved domain to begin discovery.</p></div>:<div className="divide-y divide-[#21262d]">{targets.map(t=><div key={t.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="font-mono text-sm font-semibold text-cyan-400">{t.target||t.name}</p>{t.description&&<p className="mt-1 text-xs text-gray-600">{t.description}</p>}<div className="mt-2 flex gap-4 text-[10px] text-gray-600"><span>{t.scan_count||0} discovery cycles</span><span>Last observed: {t.last_scanned_at?new Date(t.last_scanned_at).toLocaleString():'Never'}</span><span>Risk: {t.risk_score||0}</span></div></div><button onClick={()=>del(t)} className="btn-gray flex items-center gap-1 text-xs text-red-400"><Trash2 className="h-3.5 w-3.5"/>Remove</button></div>)}</div>}</div>
+    {organizationId&&<SeedsPanel organizationId={organizationId}/>} 
+    {createOpen&&<DomainModal onClose={()=>setCreateOpen(false)} onSaved={load}/>} 
+  </div></AppLayout>
 }
+
+export default function AssetsPage(){return <AuthProvider><CompanyDomainsContent/></AuthProvider>}

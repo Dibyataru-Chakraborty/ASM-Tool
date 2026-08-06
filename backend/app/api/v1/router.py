@@ -7,7 +7,12 @@ from app.api.v1.auth.routes import router as auth_router
 from app.api.v1.assets.routes import router as assets_router
 from app.api.v1.scans.routes import router as scans_router
 from app.api.v1.dashboard.routes import router as dashboard_router
-from app.api.v1.shannon import router as shannon_router
+from app.api.v1.ai_analysis import router as ai_analysis_router
+from app.api.v1.recon import router as recon_router
+from app.api.v1.schedules import router as schedules_router
+from app.api.v1.report_listing import router as report_listing_router
+from app.api.v1.attack_surface import router as attack_surface_router
+from app.api.v1.organizations import super_router, org_router
 
 # Create main v1 router
 router = APIRouter(prefix="/api/v1")
@@ -17,12 +22,19 @@ router.include_router(auth_router)
 router.include_router(assets_router)
 router.include_router(scans_router)
 router.include_router(dashboard_router)
-router.include_router(shannon_router)
+router.include_router(ai_analysis_router)
+router.include_router(recon_router)
+router.include_router(schedules_router)
+router.include_router(report_listing_router)
+router.include_router(attack_surface_router)
+router.include_router(super_router)
+router.include_router(org_router)
 
 # Include advanced phase routers
 from app.api.v1.phases_2_to_10 import (
     ports_router, vuln_router, ti_router, secrets_router,
-    alerts_router, ai_router, enterprise_router, reports_router, backup_router
+    alerts_router, ai_router, enterprise_router, reports_router, backup_router,
+    shannon_router
 )
 
 router.include_router(ports_router)
@@ -34,5 +46,6 @@ router.include_router(ai_router)
 router.include_router(enterprise_router)
 router.include_router(reports_router)
 router.include_router(backup_router)
+router.include_router(shannon_router)
 
 __all__ = ["router"]

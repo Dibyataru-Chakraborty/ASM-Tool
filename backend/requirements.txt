@@ -38,6 +38,7 @@ requests==2.33.0                  # was: 2.32.4 (too low for virustotal)
 
 # ── Config ───────────────────────────────────────────────────────
 python-dotenv==1.2.2
+tzdata==2026.3                    # IANA timezones for persistent scan schedules
 
 # ── Logging & Monitoring ─────────────────────────────────────────
 structlog==26.1.0
@@ -58,7 +59,8 @@ pillow==12.3.0
 # ── AI Providers (Phase 7) ───────────────────────────────────────
 anthropic==0.117.1                # was: 0.7.0
 openai==2.46.0                    # was: 1.3.6
-google-generativeai==0.8.6        # was: missing
+google-generativeai==0.8.6        # legacy Phase 7 service
+google-genai==2.15.0               # grounded Interactions API for Nmap version analysis
 cohere==7.0.7                     # was: missing
 
 # ── Threat Intelligence (Phase 4) ────────────────────────────────
@@ -74,6 +76,7 @@ regex==2026.7.19
 
 # ── Reporting (Phase 9) ──────────────────────────────────────────
 reportlab==5.0.0
+python-docx==1.2.0
 openpyxl==3.1.5
 weasyprint==69.0                  # was: 60.0
 jinja2==3.1.6

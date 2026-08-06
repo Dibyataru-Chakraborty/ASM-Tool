@@ -3,7 +3,11 @@ export interface User {
   id: string
   email: string
   full_name: string
-  role: 'admin' | 'analyst' | 'viewer'
+  role: 'super_admin' | 'admin' | 'user'
+  platform_role: 'super_admin' | 'member'
+  organization_id?: string | null
+  organization_name?: string | null
+  organization_role?: 'admin' | 'user' | null
   is_active: boolean
   created_at: string
 }

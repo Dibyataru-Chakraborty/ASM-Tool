@@ -40,33 +40,95 @@ SessionLocal = sessionmaker(
 
 from fastapi import Request
 from sqlalchemy import text
+from sqlalchemy.orm import Session as SASession
+
+
+def configure_session_rls(
+    db: Session,
+    *,
+    user_id: str = "",
+    organization_id: str = "",
+    bypass: bool = False,
+) -> None:
+    """Attach RLS context to a SQLAlchemy session.
+
+    Context is re-applied with SET LOCAL at the beginning of every database
+    transaction. This prevents tenant state from leaking through pooled
+    PostgreSQL connections and survives application rollbacks safely.
+    """
+    ctx = {
+        "user_id": str(user_id or ""),
+        "organization_id": str(organization_id or ""),
+        "bypass": bool(bypass),
+    }
+    db.info["rls_context"] = ctx
+    if db.in_transaction():
+        connection = db.connection()
+        connection.execute(text("SELECT set_config('app.current_user_id', :v, true)"), {"v": ctx["user_id"]})
+        connection.execute(text("SELECT set_config('app.current_org_id', :v, true)"), {"v": ctx["organization_id"]})
+        connection.execute(text("SELECT set_config('app.bypass_rls', :v, true)"), {"v": "true" if ctx["bypass"] else "false"})
+
+
+@event.listens_for(SASession, "after_begin")
+def _apply_session_rls_context(session, transaction, connection):
+    """Apply transaction-local tenant context on every transaction start."""
+    ctx = session.info.get("rls_context")
+    if not ctx:
+        # Default-deny context for sessions that were not explicitly configured.
+        ctx = {"user_id": "", "organization_id": "", "bypass": False}
+    connection.execute(text("SELECT set_config('app.current_user_id', :v, true)"), {"v": str(ctx.get("user_id") or "")})
+    connection.execute(text("SELECT set_config('app.current_org_id', :v, true)"), {"v": str(ctx.get("organization_id") or "")})
+    connection.execute(text("SELECT set_config('app.bypass_rls', :v, true)"), {"v": "true" if ctx.get("bypass") else "false"})
+
 
 def get_db(request: Request = None) -> Session:
-    """Dependency injection for database session with RLS support."""
+    """Database session with tenant RLS context derived from the signed JWT."""
     db = SessionLocal()
     try:
-        # Reset session context variables to prevent connection pool leakage
-        try:
-            db.execute(text("SET app.current_user_id = ''"))
-            db.execute(text("SET app.bypass_rls = 'false'"))
-        except Exception:
-            pass
-
-        # If running inside a request context, attempt to extract and set the user ID for RLS
+        user_id = ""
+        organization_id = ""
+        bypass = False
         if request:
+            # Login/refresh need a privileged lookup before a user JWT exists.
+            if request.url.path in {"/api/v1/auth/login", "/api/v1/auth/refresh"}:
+                bypass = True
             auth_header = request.headers.get("authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 try:
-                    token = auth_header.split(" ")[1]
+                    token = auth_header.split(" ", 1)[1]
                     from app.security import JWTUtils
-                    user_id = JWTUtils.extract_user_id(token)
-                    if user_id:
-                        db.execute(text("SET app.current_user_id = :user_id"), {"user_id": user_id})
+                    claims = JWTUtils.extract_claims(token)
+                    user_id = claims.get("sub") or ""
+                    platform_role = claims.get("platform_role") or "member"
+                    token_org = claims.get("organization_id") or ""
+                    if platform_role == "super_admin":
+                        # Super Admin sees all tenants only in the platform console.
+                        # Entering a tenant workspace turns RLS back on for that org.
+                        selected_org = request.headers.get("X-Organization-ID") or ""
+                        if selected_org:
+                            organization_id = selected_org
+                            bypass = False
+                        else:
+                            bypass = True
+                    else:
+                        organization_id = token_org
+                        bypass = False
                 except Exception:
-                    pass
+                    # Invalid tokens are rejected by the auth dependency. Keep this
+                    # DB session default-deny until then.
+                    user_id = ""
+                    organization_id = ""
+                    bypass = False
+        configure_session_rls(
+            db,
+            user_id=user_id,
+            organization_id=organization_id,
+            bypass=bypass,
+        )
         yield db
     finally:
         db.close()
+
 
 
 def init_db():

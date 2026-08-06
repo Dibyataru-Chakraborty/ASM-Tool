@@ -55,6 +55,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      pd_installer:
+        condition: service_started
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -108,6 +110,21 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
+    networks:
+      - asm_network
+
+  adminer:
+    image: adminer:latest
+    container_name: asm_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./adminer.css:/var/www/html/adminer.css
+      - ./digi_samurai.php:/var/www/html/plugins-enabled/digi_samurai.php
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - asm_network
 

@@ -33,13 +33,13 @@ class Settings(BaseSettings):
     cors_headers: list = ["*"]
 
     # Database
-    database_url: str = "postgresql://asm_user:asm_password@postgres:5432/asm_db"
+    database_url: str
     database_echo: bool = False  # Log SQL queries
     database_pool_size: int = 20
     database_max_overflow: int = 40
 
     # JWT
-    jwt_secret_key: str = "your-super-secret-key-change-in-production"
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7

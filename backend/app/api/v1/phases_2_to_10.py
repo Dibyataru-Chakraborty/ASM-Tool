@@ -114,8 +114,56 @@ async def get_critical_vulnerabilities(
             })
         return {"vulnerabilities": result, "total": len(result)}
     except Exception as e:
+<<<<<<< Updated upstream
         logger.error(f"Error querying critical vulnerabilities: {str(e)}")
         return {"vulnerabilities": [], "total": 0}
+=======
+        logger.exception("Error querying critical vulnerability history: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to load critical findings")
+
+
+@vuln_router.get("/{vulnerability_id}")
+async def get_vulnerability(
+    vulnerability_id: str,
+    current_user=Depends(require_tenant_member()),
+    db: Session = Depends(get_db),
+):
+    """Return one retained finding with its originating scan."""
+    from app.models.phase2 import Vulnerability
+
+    row = (
+        _owned_vulnerability_query(db, current_user.current_organization_id)
+        .filter(Vulnerability.id == vulnerability_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Vulnerability not found")
+    return _vulnerability_payload(*row)
+
+
+@vuln_router.post("/{vulnerability_id}/false-positive")
+async def toggle_false_positive(
+    vulnerability_id: str,
+    current_user=Depends(require_org_admin()),
+    db: Session = Depends(get_db),
+):
+    """Toggle the analyst false-positive flag on an owned finding."""
+    from app.models.phase2 import Vulnerability
+
+    row = (
+        _owned_vulnerability_query(db, current_user.current_organization_id)
+        .filter(Vulnerability.id == vulnerability_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Vulnerability not found")
+
+    vulnerability, scan = row
+    vulnerability.is_false_positive = not vulnerability.is_false_positive
+    db.commit()
+    db.refresh(vulnerability)
+    return _vulnerability_payload(vulnerability, scan)
+>>>>>>> Stashed changes
 
 
 # Phase 4: Threat Intelligence Endpoints
@@ -461,7 +509,11 @@ class TargetUrlRequest(BaseModel):
 async def start_shannon_scan(
     request: TargetUrlRequest,
     background_tasks: BackgroundTasks,
+<<<<<<< Updated upstream
     current_user=Depends(get_current_user),
+=======
+    current_user=Depends(require_org_admin()),
+>>>>>>> Stashed changes
 ):
     """Start a Shannon AI pentest scan."""
     if not request.target_url.strip():

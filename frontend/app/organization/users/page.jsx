@@ -1,0 +1,145 @@
+"use client";
+import { useEffect, useState } from "react";
+import AppLayout from "@/components/layout/AppLayout";
+import asm from "@/lib/api";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { ShieldAlert, UserPlus, Users } from "lucide-react";
+
+function UsersContent() {
+  const { user } = useAuth();
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState({ email: "", password: "", full_name: "" });
+  const [error, setError] = useState("");
+  const isAdmin =
+    user?.platform_role === "super_admin" ||
+    user?.organization_role === "admin";
+  const load = () =>
+    asm
+      .getOrganizationUsers()
+      .then((d) => setItems(d.items || []))
+      .catch((e) =>
+        setError(e.response?.data?.detail || "Failed to load users"),
+      );
+  useEffect(() => {
+    if (user?.organization_id && isAdmin) load();
+  }, [user?.organization_id, isAdmin]);
+  const create = async (e) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await asm.createOrganizationUser(form);
+      setForm({ email: "", password: "", full_name: "" });
+      load();
+    } catch (e) {
+      setError(e.response?.data?.detail || "Failed to create user");
+    }
+  };
+  if (user && !isAdmin)
+    return (
+      <AppLayout>
+        <div className="card p-8 text-center">
+          <ShieldAlert className="mx-auto h-8 w-8 text-red-400" />
+          <h2 className="mt-3 font-semibold">
+            Organization Admin access required
+          </h2>
+        </div>
+      </AppLayout>
+    );
+  return (
+    <AppLayout>
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-xl font-semibold">Organization Users</h2>
+          <p className="text-sm text-gray-500">
+            {user?.organization_name} · Admin can create and disable normal
+            Users only. Super Admin controls the organization Admin.
+          </p>
+        </div>
+        {error && (
+          <p className="rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
+            {error}
+          </p>
+        )}
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+          <div className="panel overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-[#21262d] p-4">
+              <Users className="h-4 w-4 text-indigo-400" />
+              <h3 className="font-semibold">Members</h3>
+            </div>
+            <div className="divide-y divide-[#21262d]">
+              {items.map((u) => (
+                <div key={u.id} className="flex items-center gap-3 p-4">
+                  <div className="flex-1">
+                    <p className="text-gray-200">{u.full_name || u.email}</p>
+                    <p className="text-xs text-gray-500">
+                      {u.email} · {u.role} ·{" "}
+                      {u.is_active ? "active" : "disabled"}
+                    </p>
+                  </div>
+                  {u.role !== "admin" && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() =>
+                        asm
+                          .setOrganizationUserStatus(u.id, !u.is_active)
+                          .then(load)
+                      }
+                    >
+                      {u.is_active ? "Disable" : "Enable"}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!items.length && (
+                <div className="p-10 text-center text-sm text-gray-600">
+                  No organization members found.
+                </div>
+              )}
+            </div>
+          </div>
+          <form onSubmit={create} className="panel space-y-3 p-4">
+            <h3 className="flex items-center gap-2 font-semibold">
+              <UserPlus className="h-4 w-4" />
+              Create User
+            </h3>
+            <input
+              className="input w-full"
+              placeholder="Full name"
+              value={form.full_name}
+              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+            />
+            <input
+              className="input w-full"
+              type="email"
+              required
+              placeholder="Email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            <input
+              className="input w-full"
+              type="password"
+              required
+              placeholder="Temporary password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+            <p className="text-[10px] leading-4 text-gray-600">
+              This endpoint always creates role <strong>USER</strong> inside{" "}
+              {user?.organization_name}. The browser cannot choose another
+              organization or create an Admin.
+            </p>
+            <button className="btn-primary w-full">Create User</button>
+          </form>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+export default function UsersPage() {
+  return (
+    <AuthProvider>
+      <UsersContent />
+    </AuthProvider>
+  );
+}

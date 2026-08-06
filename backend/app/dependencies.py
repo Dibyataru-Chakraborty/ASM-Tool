@@ -4,7 +4,7 @@ Handles authentication, authorization, and service injection.
 """
 
 from typing import Optional
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.security import JWTUtils
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_current_user_id(
+<<<<<<< Updated upstream
     authorization: Optional[str] = Header(None),
 ) -> str:
     """Extract and validate current user from JWT token."""
@@ -28,6 +29,25 @@ async def get_current_user_id(
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
+=======
+    request: Request,
+    authorization: Optional[str] = Header(None)
+) -> str:
+    token = None
+    if authorization:
+        try:
+            scheme, token = authorization.split()
+            if scheme.lower() != "bearer":
+                token = None
+        except ValueError:
+            pass
+
+    if not token:
+        token = request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authorization header or cookie")
+>>>>>>> Stashed changes
     try:
         user_id = JWTUtils.extract_user_id(token)
         return user_id

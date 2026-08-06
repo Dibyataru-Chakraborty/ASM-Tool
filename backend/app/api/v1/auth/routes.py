@@ -2,7 +2,7 @@
 Authentication API routes.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.services.auth_service import AuthService
@@ -50,6 +50,7 @@ async def register(
 @router.post("/login", response_model=LoginResponse)
 async def login(
     request: UserLoginRequest,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """Login with email and password."""
@@ -58,6 +59,16 @@ async def login(
         result = auth_service.login(
             email=request.email,
             password=request.password
+        )
+        # Set access_token in secure, http-only cookie
+        response.set_cookie(
+            key="access_token",
+            value=result["access_token"],
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=30 * 60, # 30 minutes
+            path="/"
         )
         return result
     except AuthenticationError as e:
@@ -124,7 +135,8 @@ async def change_password(
 
 
 @router.post("/logout")
-async def logout(current_user = Depends(get_current_user)):
+async def logout(response: Response, current_user = Depends(get_current_user)):
     """Logout (client-side token deletion)."""
     logger.info(f"User logged out: {current_user.id}")
+    response.delete_cookie(key="access_token", path="/")
     return {"message": "Logged out successfully"}

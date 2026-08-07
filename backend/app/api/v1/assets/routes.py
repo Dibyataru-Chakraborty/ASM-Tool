@@ -2,7 +2,7 @@
 Assets API routes for managing reconnaissance targets.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.services.asset_service import AssetService
@@ -28,10 +28,11 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     request: AssetCreateRequest,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new asset."""
+    """Create a new asset and automatically trigger a background discovery scan if it is a domain."""
     try:
         service = AssetService(db)
         asset = service.create_asset(
@@ -42,6 +43,39 @@ async def create_asset(
             asset_type=request.asset_type,
             tags=request.tags or []
         )
+        
+        # If it's a domain asset, automatically seed the Domain and kick off discovery scan
+        if asset.asset_type == "domain":
+            from app.models import Domain
+            from app.services.discovery_service import DiscoveryService
+            
+            target_val = (request.target or request.name or "").strip().lower()
+            clean_domain = target_val.replace("http://", "").replace("https://", "").split("/")[0]
+            
+            existing_domain = db.query(Domain).filter(Domain.asset_id == asset.id).first()
+            if not existing_domain:
+                domain_obj = Domain(
+                    asset_id=asset.id,
+                    domain=clean_domain,
+                    scan_status="pending"
+                )
+                db.add(domain_obj)
+                db.commit()
+                db.refresh(domain_obj)
+                domain_id = domain_obj.id
+            else:
+                domain_id = existing_domain.id
+                
+            # Trigger real / simulated scan pipeline in background
+            discovery_service = DiscoveryService(db)
+            scan = discovery_service.initiate_scan(
+                asset_id=asset.id,
+                domain_id=domain_id,
+                scan_type="discovery"
+            )
+            background_tasks.add_task(discovery_service.run_scan_simulation, scan.id, domain_id)
+            logger.info(f"Automatically triggered background discovery scan {scan.id} for asset {asset.id} (Domain: {clean_domain})")
+            
         return AssetResponse.from_orm_asset(asset)
     except (ConflictError, ValidationError) as e:
         status_code = 409 if isinstance(e, ConflictError) else 422

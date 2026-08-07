@@ -83,3 +83,4 @@ pnpm-debug.log*
 
 # Docker and other containers
 .docker/
+*.zip

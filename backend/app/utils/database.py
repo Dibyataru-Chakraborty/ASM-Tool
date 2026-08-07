@@ -70,10 +70,51 @@ def get_db(request: Request = None) -> Session:
 
 
 def init_db():
-    """Initialize database schema."""
-    from app.models import Base
+    """Initialize database schema and bootstrap super admin."""
+    from app.models import Base, User
+    from app.security import PasswordUtils
+    
     Base.metadata.create_all(bind=engine)
     logger.info("Database schema initialized")
+    
+    # Bootstrap super admin if configured
+    if settings.bootstrap_super_admin_email and settings.bootstrap_super_admin_password:
+        email = settings.bootstrap_super_admin_email.strip()
+        raw_password = settings.bootstrap_super_admin_password.strip()
+        # Remove surrounding quotes from environment variable if present
+        if (raw_password.startswith("'") and raw_password.endswith("'")) or \
+           (raw_password.startswith('"') and raw_password.endswith('"')):
+            raw_password = raw_password[1:-1]
+            
+        name = settings.bootstrap_super_admin_name or "Super Admin"
+        
+        db = SessionLocal()
+        try:
+            # Check if user already exists and delete them to recreate/reset
+            existing_user = db.query(User).filter(User.email == email).first()
+            if existing_user:
+                logger.info(f"Removing existing super admin user {email} for recreation")
+                db.delete(existing_user)
+                db.commit()
+                
+            logger.info(f"Creating bootstrap super admin user: {email}")
+            hashed_pw = PasswordUtils.hash_password(raw_password)
+            super_admin = User(
+                email=email,
+                password_hash=hashed_pw,
+                full_name=name,
+                role="admin",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(super_admin)
+            db.commit()
+            logger.info("Super admin user successfully bootstrapped")
+        except Exception as e:
+            logger.error(f"Error bootstrapping super admin: {str(e)}")
+            db.rollback()
+        finally:
+            db.close()
 
 
 def close_db():

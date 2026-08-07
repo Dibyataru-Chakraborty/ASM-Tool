@@ -74,12 +74,8 @@ The platform integrates industry-standard security tools, threat intelligence AP
 | **Threat Intelligence** | Shodan, Censys, VirusTotal | [discovery_service.py](backend/app/services/discovery_service.py) | Enriches discovered IPs/domains with external vulnerability feeds & reputational analysis. |
 | **Secret Detection** | Custom Regex Engine | [discovery_service.py](backend/app/services/discovery_service.py) | Scans cloud storage files and git repositories for leaked credentials/API keys. |
 | **Vulnerability Scanning** | `nuclei` | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Performs targeted, template-driven vulnerability assessments on services. |
-<<<<<<< Updated upstream
-| **Shannon AI Pentester** | Google Gemini (or Open AI/Claude) | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Multi-phase agentic pentesting logic simulating crawling, exploit verification, and PoC generation. |
-=======
 | **Service-Version Enrichment** | `nmap` + AI Grounding | [gemini_service_assessment.py](backend/app/services/gemini_service_assessment.py) | Checks detected product versions, cited CVE applicability, and lifecycle status without replacing scanner evidence. |
-| **AI Pentester** | Google Gemini (or Open AI/Claude) | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Multi-phase agentic pentesting logic simulating crawling, exploit verification, and PoC generation. |
->>>>>>> Stashed changes
+| **Shannon AI Pentester** | Google Gemini (or Open AI/Claude) | [ai_vulnerability_service.py](backend/app/services/ai_vulnerability_service.py) | Multi-phase agentic pentesting logic simulating crawling, exploit verification, and PoC generation. |
 
 ---
 
@@ -144,8 +140,6 @@ The application requires environment files (`.env`) inside both the `backend/` a
 
 ---
 
-<<<<<<< Updated upstream
-=======
 ## 🛢️ Database Dashboard (Adminer)
 
 A dedicated, customized database administration dashboard is available to inspect and query the local PostgreSQL database in real-time.
@@ -161,8 +155,6 @@ A dedicated, customized database administration dashboard is available to inspec
 The dashboard is custom-styled with the **Digi Samurai** theme (maroon, white, and dark) and features a password-visibility toggle on the login page.
 
 ---
-
->>>>>>> Stashed changes
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -222,8 +214,7 @@ All services (`asm_postgres`, `asm_adminer`, `asm_redis`, `asm_backend`, `asm_fr
 
 #### 3. Port Collisions (Port 80/443/3000/8000/8080 already in use)
 * **Error**: `Bind for 0.0.0.0:80 failed: port is already allocated`.
-<<<<<<< Updated upstream
-* **Fix**: Locate what service is holding the port. You can change port bindings inside `docker-compose.yml` (e.g., mapping nginx to `8080:80` instead of `80:80`).
+* **Fix**: Locate what service is holding the port. You can change port bindings inside `docker-compose.yml` (e.g., mapping nginx to alternative host ports like `8080:80` or changing other mapped ports).
 
 #### 3. Alembic Database Migration Issues
 * **Error**: `alembic.util.exc.CommandError: Can't locate revision` or database out of sync.
@@ -238,9 +229,6 @@ All services (`asm_postgres`, `asm_adminer`, `asm_redis`, `asm_backend`, `asm_fr
   ```bash
   docker compose start pd_installer
   ```
-=======
-* **Fix**: Change port bindings inside `docker-compose.yml` (e.g., mapping nginx or adminer to alternative host ports).
->>>>>>> Stashed changes
 
 ---
 

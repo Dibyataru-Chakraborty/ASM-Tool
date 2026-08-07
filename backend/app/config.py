@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     aws_secret_access_key: Optional[str] = None
     aws_region: str = "us-east-1"
 
+    # Super Admin Bootstrap
+    bootstrap_super_admin_email: Optional[str] = None
+    bootstrap_super_admin_password: Optional[str] = None
+    bootstrap_super_admin_name: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = False

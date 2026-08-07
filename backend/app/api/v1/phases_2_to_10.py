@@ -73,6 +73,7 @@ async def list_vulnerabilities(
                 "cvss_score": v.cvss_score or 5.0,
                 "target": subdomain.subdomain if subdomain else "unknown",
                 "created_at": v.created_at,
+                "is_false_positive": getattr(v, "is_false_positive", False),
             })
         
         return {"vulnerabilities": result, "total": len(result)}
@@ -111,59 +112,97 @@ async def get_critical_vulnerabilities(
                 "cvss_score": v.cvss_score or 9.0,
                 "target": subdomain.subdomain if subdomain else "unknown",
                 "created_at": v.created_at,
+                "is_false_positive": getattr(v, "is_false_positive", False),
             })
         return {"vulnerabilities": result, "total": len(result)}
     except Exception as e:
-<<<<<<< Updated upstream
         logger.error(f"Error querying critical vulnerabilities: {str(e)}")
         return {"vulnerabilities": [], "total": 0}
-=======
-        logger.exception("Error querying critical vulnerability history: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to load critical findings")
 
 
 @vuln_router.get("/{vulnerability_id}")
 async def get_vulnerability(
     vulnerability_id: str,
-    current_user=Depends(require_tenant_member()),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return one retained finding with its originating scan."""
-    from app.models.phase2 import Vulnerability
+    """Return one vulnerability."""
+    from app.models.phase2 import Vulnerability, Service, Port
+    from app.models import Subdomain, Domain, Asset
 
-    row = (
-        _owned_vulnerability_query(db, current_user.current_organization_id)
-        .filter(Vulnerability.id == vulnerability_id)
+    v = (
+        db.query(Vulnerability)
+        .join(Service)
+        .join(Port)
+        .join(Subdomain)
+        .join(Domain)
+        .join(Asset)
+        .filter(Asset.user_id == current_user.id, Vulnerability.id == vulnerability_id)
         .first()
     )
-    if not row:
+    if not v:
         raise HTTPException(status_code=404, detail="Vulnerability not found")
-    return _vulnerability_payload(*row)
+        
+    service = db.query(Service).filter(Service.id == v.service_id).first()
+    port = db.query(Port).filter(Port.id == service.port_id).first() if service else None
+    subdomain = db.query(Subdomain).filter(Subdomain.id == port.subdomain_id).first() if port else None
+    
+    return {
+        "id": v.id,
+        "cve_id": v.cve_id,
+        "title": v.title,
+        "description": v.description,
+        "severity": v.severity.lower() if v.severity else "medium",
+        "cvss_score": v.cvss_score or 5.0,
+        "target": subdomain.subdomain if subdomain else "unknown",
+        "created_at": v.created_at,
+        "is_false_positive": getattr(v, "is_false_positive", False),
+    }
 
 
 @vuln_router.post("/{vulnerability_id}/false-positive")
 async def toggle_false_positive(
     vulnerability_id: str,
-    current_user=Depends(require_org_admin()),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Toggle the analyst false-positive flag on an owned finding."""
-    from app.models.phase2 import Vulnerability
+    from app.models.phase2 import Vulnerability, Service, Port
+    from app.models import Subdomain, Domain, Asset
 
-    row = (
-        _owned_vulnerability_query(db, current_user.current_organization_id)
-        .filter(Vulnerability.id == vulnerability_id)
+    v = (
+        db.query(Vulnerability)
+        .join(Service)
+        .join(Port)
+        .join(Subdomain)
+        .join(Domain)
+        .join(Asset)
+        .filter(Asset.user_id == current_user.id, Vulnerability.id == vulnerability_id)
         .first()
     )
-    if not row:
+    if not v:
         raise HTTPException(status_code=404, detail="Vulnerability not found")
 
-    vulnerability, scan = row
-    vulnerability.is_false_positive = not vulnerability.is_false_positive
-    db.commit()
-    db.refresh(vulnerability)
-    return _vulnerability_payload(vulnerability, scan)
->>>>>>> Stashed changes
+    if hasattr(v, "is_false_positive"):
+        v.is_false_positive = not v.is_false_positive
+        db.commit()
+        db.refresh(v)
+    
+    service = db.query(Service).filter(Service.id == v.service_id).first()
+    port = db.query(Port).filter(Port.id == service.port_id).first() if service else None
+    subdomain = db.query(Subdomain).filter(Subdomain.id == port.subdomain_id).first() if port else None
+
+    return {
+        "id": v.id,
+        "cve_id": v.cve_id,
+        "title": v.title,
+        "description": v.description,
+        "severity": v.severity.lower() if v.severity else "medium",
+        "cvss_score": v.cvss_score or 5.0,
+        "target": subdomain.subdomain if subdomain else "unknown",
+        "created_at": v.created_at,
+        "is_false_positive": getattr(v, "is_false_positive", False),
+    }
 
 
 # Phase 4: Threat Intelligence Endpoints
@@ -509,11 +548,7 @@ class TargetUrlRequest(BaseModel):
 async def start_shannon_scan(
     request: TargetUrlRequest,
     background_tasks: BackgroundTasks,
-<<<<<<< Updated upstream
     current_user=Depends(get_current_user),
-=======
-    current_user=Depends(require_org_admin()),
->>>>>>> Stashed changes
 ):
     """Start a Shannon AI pentest scan."""
     if not request.target_url.strip():

@@ -237,19 +237,18 @@ function SeedsPanel({ organizationId }) {
                       confidence
                     </p>
                   </div>
-                  {seed.is_primary ? (
+                  {seed.is_primary && (
                     <span className="rounded border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] text-blue-400">
                       PRIMARY
                     </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => remove(seed.id)}
-                      className="text-gray-600 hover:text-red-400"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => remove(seed.id)}
+                    className="text-gray-600 hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               ))}
             </div>

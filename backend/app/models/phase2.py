@@ -110,6 +110,7 @@ class Vulnerability(Base, TimestampMixin):
     cvss_score = Column(Float, nullable=True)
     cvss_vector = Column(String(255), nullable=True)
     published_date = Column(String, nullable=True)
+    is_false_positive = Column(Boolean, default=False, nullable=False)
     
     __table_args__ = (
         Index("idx_vuln_cve", "cve_id"),

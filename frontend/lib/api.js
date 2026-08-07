@@ -236,6 +236,10 @@ export const asm = {
     client
       .put(`/api/v1/super-admin/organizations/${id}/admin`, b)
       .then((r) => r.data),
+  deleteOrganization: (id) =>
+    client
+      .delete(`/api/v1/super-admin/organizations/${id}`)
+      .then((r) => r.data),
   getCurrentOrganization: () =>
     client.get("/api/v1/organization").then((r) => r.data),
   getOrganizationUsers: () =>

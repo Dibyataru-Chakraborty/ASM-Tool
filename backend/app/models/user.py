@@ -2,7 +2,7 @@
 User model with RBAC roles and authentication fields.
 """
 
-from sqlalchemy import Column, String, Boolean, Index
+from sqlalchemy import Column, String, Boolean, Index, ForeignKey
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, get_uuid
 
@@ -32,6 +32,8 @@ class User(Base, TimestampMixin):
     # MFA (Phase 8)
     mfa_enabled = Column(Boolean, default=False)
     mfa_secret = Column(String(255), nullable=True)
+    
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
 
     # Relations
     assets = relationship("Asset", back_populates="owner", cascade="all, delete-orphan")

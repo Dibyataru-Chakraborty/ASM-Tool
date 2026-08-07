@@ -1,8 +1,4 @@
-"""
-Authentication API routes.
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.services.auth_service import AuthService
@@ -60,6 +56,20 @@ async def login(
             email=request.email,
             password=request.password
         )
+        result["platform_role"] = "super_admin" if result["role"] == "admin" else result["role"]
+        
+        # Resolve organization details for normal user (superadmin login doesn't have org initially selected)
+        from app.models import User, Tenant
+        user = db.query(User).filter(User.id == result["user_id"]).first()
+        org_id = user.tenant_id if user else None
+        org_name = None
+        if org_id:
+            tenant = db.query(Tenant).filter(Tenant.id == org_id).first()
+            if tenant:
+                org_name = tenant.name
+        result["organization_id"] = org_id
+        result["organization_name"] = org_name
+        
         # Set access_token in secure, http-only cookie
         response.set_cookie(
             key="access_token",
@@ -98,14 +108,33 @@ async def refresh_token(
 
 @router.get("/me", response_model=dict)
 async def get_current_user_info(
-    current_user = Depends(get_current_user)
+    request: Request,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """Get current authenticated user information."""
+    org_id = current_user.tenant_id
+    org_name = None
+    
+    # If the user is a super admin, check X-Organization-ID header
+    is_super = current_user.role == "admin" and current_user.tenant_id is None
+    if is_super:
+        org_id = request.headers.get("X-Organization-ID")
+        
+    if org_id:
+        from app.models import Tenant
+        tenant = db.query(Tenant).filter(Tenant.id == org_id).first()
+        if tenant:
+            org_name = tenant.name
+            
     return {
         "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role": current_user.role,
+        "platform_role": "super_admin" if is_super else current_user.role,
+        "organization_id": org_id,
+        "organization_name": org_name,
         "is_active": current_user.is_active,
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at.isoformat(),

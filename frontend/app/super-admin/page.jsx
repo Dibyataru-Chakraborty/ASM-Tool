@@ -18,6 +18,7 @@ import {
   X,
   Loader2,
   CheckCircle2,
+  Trash2,
 } from "lucide-react";
 
 const EMPTY_FORM = {
@@ -187,6 +188,99 @@ function AdminModal({ org, onClose, onSaved }) {
 }
 
 /* =========================================================
+   EDIT ORGANIZATION NAME MODAL
+   ========================================================= */
+
+function EditOrgModal({ org, onClose, onSaved }) {
+  const [name, setName] = useState(org.name || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await asm.updateOrganization(org.id, {
+        name: name.trim(),
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(
+        err?.response?.data?.detail || "Could not update organization name",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+
+      <div className="card relative w-full max-w-md p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-100">
+              Edit Organization Name
+            </h3>
+          </div>
+
+          <button type="button" onClick={onClose}>
+            <X className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={submit} autoComplete="off" className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-gray-400">
+              Organization Name
+            </label>
+            <input
+              type="text"
+              className="input font-medium"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Organization Name"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-gray text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn-blue text-xs flex items-center gap-1"
+            >
+              {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+/* =========================================================
    SUPER ADMIN PAGE
    ========================================================= */
 
@@ -205,8 +299,8 @@ export function SuperAdminContent() {
   const [creating, setCreating] = useState(false);
 
   const [adminOrg, setAdminOrg] = useState(null);
-
   const [working, setWorking] = useState(null);
+  const [editOrg, setEditOrg] = useState(null);
 
   /* =====================================================
      LOAD ORGANIZATIONS
@@ -324,17 +418,30 @@ export function SuperAdminContent() {
 
   const toggleOrganization = async (org) => {
     setWorking(org.id);
-
     setError("");
-
     try {
       await asm.updateOrganization(org.id, {
         status: org.status === "active" ? "disabled" : "active",
       });
-
       await load();
     } catch (err) {
       setError(err?.response?.data?.detail || "Could not update organization");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const deleteOrganization = async (org) => {
+    if (!window.confirm(`Are you absolutely sure you want to permanently delete organization "${org.name}"?\nThis will permanently delete all its users, assets, subdomains, scans, and vulnerabilities. This action CANNOT be undone.`)) {
+      return;
+    }
+    setWorking(org.id);
+    setError("");
+    try {
+      await asm.deleteOrganization(org.id);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not delete organization");
     } finally {
       setWorking(null);
     }
@@ -585,6 +692,15 @@ export function SuperAdminContent() {
                             <UserCog className="h-4 w-4" />
                             Admin
                           </button>
+
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setEditOrg(org)}
+                          >
+                            <Building2 className="h-4 w-4" />
+                            Rename
+                          </button>
  
                           <button
                             type="button"
@@ -604,6 +720,16 @@ export function SuperAdminContent() {
                           >
                             <ExternalLink className="h-4 w-4" />
                             Open Workspace
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn-secondary flex items-center gap-1 border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                            disabled={working === org.id}
+                            onClick={() => deleteOrganization(org)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Remove
                           </button>
                         </div>
                       </div>
@@ -731,6 +857,14 @@ export function SuperAdminContent() {
           <AdminModal
             org={adminOrg}
             onClose={() => setAdminOrg(null)}
+            onSaved={load}
+          />
+        )}
+
+        {editOrg && (
+          <EditOrgModal
+            org={editOrg}
+            onClose={() => setEditOrg(null)}
             onSaved={load}
           />
         )}

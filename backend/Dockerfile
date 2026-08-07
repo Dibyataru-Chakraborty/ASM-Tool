@@ -3,21 +3,9 @@ FROM golang:alpine AS go-builder
 # Install build dependencies
 RUN apk add --no-cache git libpcap-dev gcc musl-dev
 
-# Install ProjectDiscovery tools (compiled to /go/bin/)
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/asnmap/cmd/asnmap@latest && \
-    go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest && \
-    go install -v github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest && \
-    go install -v github.com/projectdiscovery/notify/cmd/notify@latest && \
-    go install -v github.com/projectdiscovery/proxify/cmd/proxify@latest && \
-    go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest && \
-    go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+# Copy and run the ProjectDiscovery installation script
+COPY scripts/install_pd_tools.sh /install_pd_tools.sh
+RUN chmod +x /install_pd_tools.sh && /install_pd_tools.sh
 
 # Stage 2: Final runtime Python image
 FROM python:3.12-slim
@@ -28,7 +16,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PATH=$PATH:/usr/local/pd_tools \
+    PATH=/usr/local/pd_tools:$PATH \
     PYTHONPATH=/app
 
 # Install system dependencies
@@ -38,8 +26,9 @@ RUN apt-get update && apt-get install -y \
     libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy compiled Go tools from builder
-COPY --from=go-builder /go/bin/* /usr/local/bin/
+# Create directory and copy compiled Go tools from builder
+RUN mkdir -p /usr/local/pd_tools
+COPY --from=go-builder /usr/local/bin/pd/* /usr/local/pd_tools/
 
 # Copy requirements
 COPY requirements.txt .

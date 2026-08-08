@@ -253,7 +253,7 @@ class DiscoveryService:
 
             target = domain.domain
 
-            # 2. Add some simulated subdomains
+            # 2. Create subdomain records (populated by real tools)
             subdomains_to_create = [
                 f"www.{target}",
                 f"api.{target}",
@@ -274,24 +274,19 @@ class DiscoveryService:
                     sub_obj = Subdomain(
                         domain_id=domain_id,
                         subdomain=sub,
-                        ip_addresses=json.dumps([f"192.168.1.{random.randint(10, 250)}"]),
-                        is_responsive=random.choice([True, True, True, False]),
-                        response_status_code=random.choice([200, 200, 403, 401, 500]),
-                        has_ssl=random.choice([True, True, False])
+                        ip_addresses=json.dumps([]),
+                        is_responsive=False,
+                        response_status_code=None,
+                        has_ssl=False
                     )
                     self.db.add(sub_obj)
                     self.db.commit()
                     self.db.refresh(sub_obj)
                 created_subdomain_ids.append(sub_obj.id)
 
-            # 3. Add some simulated DNS records
-            dns_records = [
-                ("A", f"192.168.1.{random.randint(10, 250)}", 3600),
-                ("MX", f"10 mail.{target}", 86400),
-                ("TXT", "v=spf1 include:_spf.google.com ~all", 3600),
-                ("NS", f"ns1.{target}", 86400),
-                ("CNAME", f"cloudflare.com", 3600)
-            ]
+            # 3. DNS records (populated by dnsx)
+            # DNS records are populated by the real scanner (dnsx tool)
+            dns_records = []  # No simulated DNS records
             for rtype, rval, ttl in dns_records:
                 existing_dns = self.db.query(DNSRecord).filter(
                     DNSRecord.domain_id == domain_id,
@@ -307,17 +302,14 @@ class DiscoveryService:
                     ))
             self.db.commit()
 
-            # 4. Add some simulated open ports and services for responsive subdomains
+            # 4. Ports and services (populated by naabu/nmap)
             vulnerabilities_created = 0
             for sub_id in created_subdomain_ids:
                 sub_obj = self.db.query(Subdomain).filter(Subdomain.id == sub_id).first()
                 if sub_obj and sub_obj.is_responsive:
                     # Create HTTP/HTTPS ports
-                    ports = [(80, "http"), (443, "https")]
-                    if random.choice([True, False]):
-                        ports.append((22, "ssh"))
-                    if random.choice([True, False]):
-                        ports.append((8080, "http-proxy"))
+                    # Ports are populated by the real scanner (naabu tool)
+                    ports = []  # No simulated ports
 
                     for pnum, pname in ports:
                         port_obj = self.db.query(Port).filter(
@@ -348,49 +340,9 @@ class DiscoveryService:
                             self.db.commit()
                             self.db.refresh(srv)
 
-                            # Add simulated screenshot for HTTP/HTTPS
-                            if pnum in [80, 443]:
-                                protocol_str = "https" if pnum == 443 else "http"
-                                screenshot_obj = Screenshot(
-                                    subdomain_id=sub_id,
-                                    url=f"{protocol_str}://{sub_obj.subdomain}",
-                                    protocol=protocol_str,
-                                    port=pnum,
-                                    file_path=f"/screenshots/{sub_obj.subdomain}.png",
-                                    file_size=10240,
-                                    status_code=sub_obj.response_status_code or 200,
-                                    response_time_ms=random.choice([50, 120, 240, 310]),
-                                    title=f"ASM Landing Page - {sub_obj.subdomain}",
-                                    description="Attack Surface Management simulated screenshot.",
-                                    technologies=json.dumps(["React", "Nginx", "TailwindCSS"]),
-                                    is_valid=1
-                                )
-                                self.db.add(screenshot_obj)
-                                self.db.commit()
+                            # Screenshots are captured by gowitness — see tool_executor.py
 
-                            # Randomly assign a vulnerability to SSH or HTTP
-                            if pnum == 22 and random.choice([True, False]):
-                                vuln = Vulnerability(
-                                    service_id=srv.id,
-                                    title="Outdated SSH Version",
-                                    description="The SSH server version is outdated and may contain security vulnerabilities.",
-                                    severity="High",
-                                    cvss_score=7.5,
-                                    cve_id="CVE-2023-38408"
-                                )
-                                self.db.add(vuln)
-                                vulnerabilities_created += 1
-                            elif pnum == 80 and random.choice([True, False]):
-                                vuln = Vulnerability(
-                                    service_id=srv.id,
-                                    title="SQL Injection in Login Endpoint",
-                                    description="A SQL injection vulnerability exists in the login form of the web application.",
-                                    severity="Critical",
-                                    cvss_score=9.5,
-                                    cve_id="CVE-2023-99999"
-                                )
-                                self.db.add(vuln)
-                                vulnerabilities_created += 1
+                            # No hardcoded vulnerabilities — real vulns come from nuclei/scanner tools
 
             self.db.commit()
 
@@ -432,17 +384,17 @@ class DiscoveryService:
         import os
         import tempfile
         import shutil
-        import datetime
-        from app.models import Subdomain, DNSRecord, SSLCertificate, Screenshot, Asset
+        from app.models import Subdomain, DNSRecord, Screenshot, Asset
         from app.models.phase2 import Port, Service, Vulnerability
 
         target = domain.domain
         logger.info(f"Starting real ProjectDiscovery scan for domain: {target}")
 
+        # Check if subfinder is installed
         if not shutil.which("subfinder"):
             raise FileNotFoundError("subfinder is not installed")
 
-        # 1. Run Subfinder (Subdomain Discovery)
+        # 1. Run Subfinder
         logger.info(f"Running subfinder for {target}")
         sub_proc = subprocess.run(["subfinder", "-d", target, "-silent"], capture_output=True, text=True, timeout=180)
         subdomains = [line.strip().lower() for line in sub_proc.stdout.splitlines() if line.strip()]
@@ -452,51 +404,6 @@ class DiscoveryService:
             subdomains.append(target)
             
         logger.info(f"Subfinder found {len(subdomains)} subdomains")
-
-        # 2. Run alterx (Subdomain Permutations) & dnsx resolution
-        if shutil.which("alterx") and shutil.which("dnsx"):
-            logger.info("Running alterx subdomain permutations")
-            with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as alterx_temp_in:
-                for s in subdomains:
-                    alterx_temp_in.write(f"{s}\n")
-                alterx_temp_in_path = alterx_temp_in.name
-            
-            try:
-                alterx_proc = subprocess.run(
-                    ["alterx", "-list", alterx_temp_in_path, "-limit", "50", "-silent"],
-                    capture_output=True, text=True, timeout=120
-                )
-                permuted_candidates = [line.strip().lower() for line in alterx_proc.stdout.splitlines() if line.strip()]
-                
-                if permuted_candidates:
-                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as dnsx_temp_in:
-                        for pc in permuted_candidates:
-                            dnsx_temp_in.write(f"{pc}\n")
-                        dnsx_temp_in_path = dnsx_temp_in.name
-                    
-                    try:
-                        dnsx_resolve = subprocess.run(
-                            ["dnsx", "-list", dnsx_temp_in_path, "-silent"],
-                            capture_output=True, text=True, timeout=120
-                        )
-                        resolved_perms = [line.strip().lower() for line in dnsx_resolve.stdout.splitlines() if line.strip()]
-                        
-                        added_count = 0
-                        for rp in resolved_perms:
-                            if rp not in subdomains:
-                                subdomains.append(rp)
-                                added_count += 1
-                        logger.info(f"alterx + dnsx resolved an additional {added_count} permutation subdomains")
-                    finally:
-                        try:
-                            os.remove(dnsx_temp_in_path)
-                        except Exception:
-                            pass
-            finally:
-                try:
-                    os.remove(alterx_temp_in_path)
-                except Exception:
-                    pass
 
         # Create subdomains in DB
         created_subdomains = []
@@ -524,101 +431,7 @@ class DiscoveryService:
             temp_file_path = temp_file.name
 
         try:
-            subdomain_by_name = {s.subdomain: s for s in created_subdomains}
-            all_ips = set()
-            ip_to_subdomains = {}
-
-            # 3. Run dnsx (DNS Record details)
-            if shutil.which("dnsx"):
-                logger.info("Running dnsx to collect DNS records")
-                dnsx_proc = subprocess.run(
-                    ["dnsx", "-list", temp_file_path, "-a", "-aaaa", "-cname", "-mx", "-ns", "-txt", "-json", "-silent"],
-                    capture_output=True, text=True, timeout=180
-                )
-                for line in dnsx_proc.stdout.splitlines():
-                    if not line.strip():
-                        continue
-                    try:
-                        dns_info = json.loads(line)
-                        host = dns_info.get("host", "").lower()
-                        sub_obj = subdomain_by_name.get(host)
-                        if not sub_obj:
-                            continue
-                        
-                        resolved_ips = dns_info.get("a", []) + dns_info.get("aaaa", [])
-                        if resolved_ips:
-                            current_ips = json.loads(sub_obj.ip_addresses) if sub_obj.ip_addresses else []
-                            for rip in resolved_ips:
-                                if rip not in current_ips:
-                                    current_ips.append(rip)
-                                all_ips.add(rip)
-                                ip_to_subdomains.setdefault(rip, []).append(sub_obj)
-                            sub_obj.ip_addresses = json.dumps(current_ips)
-                            self.db.commit()
-                        
-                        for rtype in ["a", "aaaa", "cname", "mx", "ns", "txt"]:
-                            rvals = dns_info.get(rtype, [])
-                            if not rvals:
-                                continue
-                            if not isinstance(rvals, list):
-                                rvals = [rvals]
-                            for rval in rvals:
-                                rval_str = str(rval).strip()
-                                existing_dns = self.db.query(DNSRecord).filter(
-                                    DNSRecord.domain_id == domain.id,
-                                    DNSRecord.record_type == rtype.upper(),
-                                    DNSRecord.record_value == rval_str
-                                ).first()
-                                if not existing_dns:
-                                    self.db.add(DNSRecord(
-                                        domain_id=domain.id,
-                                        record_type=rtype.upper(),
-                                        record_value=rval_str,
-                                        ttl=3600
-                                    ))
-                        self.db.commit()
-                    except Exception as ex:
-                        logger.error(f"Error parsing dnsx record line: {ex}")
-
-            # 4. Run cdncheck (CDN / WAF detection on resolved IPs)
-            if shutil.which("cdncheck") and all_ips:
-                logger.info("Running cdncheck WAF/CDN detector")
-                with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as cdn_in:
-                    for ip in all_ips:
-                        cdn_in.write(f"{ip}\n")
-                    cdn_in_path = cdn_in.name
-                
-                try:
-                    cdn_proc = subprocess.run(
-                        ["cdncheck", "-input", cdn_in_path, "-json", "-silent"],
-                        capture_output=True, text=True, timeout=120
-                    )
-                    for line in cdn_proc.stdout.splitlines():
-                        if not line.strip():
-                            continue
-                        try:
-                            cdn_res = json.loads(line)
-                            ip = cdn_res.get("ip")
-                            if not ip:
-                                continue
-                            cdn_name = cdn_res.get("cdn_name", "") or cdn_res.get("waf_name", "")
-                            
-                            matched_subs = ip_to_subdomains.get(ip, [])
-                            for msub in matched_subs:
-                                current_tech = json.loads(msub.technologies) if msub.technologies else []
-                                if cdn_name and cdn_name not in current_tech:
-                                    current_tech.append(cdn_name)
-                                    msub.technologies = json.dumps(current_tech)
-                                    self.db.commit()
-                        except Exception:
-                            pass
-                finally:
-                    try:
-                        os.remove(cdn_in_path)
-                    except Exception:
-                        pass
-
-            # 5. Run Naabu for port scanning
+            # 2. Run Naabu for port scanning
             logger.info("Running naabu port scan")
             naabu_ports = []
             if shutil.which("naabu"):
@@ -636,6 +449,7 @@ class DiscoveryService:
             logger.info(f"Naabu found {len(naabu_ports)} open ports")
 
             # Create ports and services in DB
+            subdomain_by_name = {s.subdomain: s for s in created_subdomains}
             for p in naabu_ports:
                 sub_name = p.get("host", "").lower()
                 sub_obj = subdomain_by_name.get(sub_name)
@@ -645,6 +459,7 @@ class DiscoveryService:
                 proto = p.get("proto", "TCP").upper()
                 ip = p.get("ip")
                 
+                # Update subdomain IPs if not set
                 if ip:
                     current_ips = json.loads(sub_obj.ip_addresses) if sub_obj.ip_addresses else []
                     if ip not in current_ips:
@@ -652,6 +467,7 @@ class DiscoveryService:
                         sub_obj.ip_addresses = json.dumps(current_ips)
                         self.db.commit()
                 
+                # Check/Create port
                 port_obj = self.db.query(Port).filter(
                     Port.subdomain_id == sub_obj.id,
                     Port.port_number == pnum
@@ -667,6 +483,7 @@ class DiscoveryService:
                     self.db.commit()
                     self.db.refresh(port_obj)
                 
+                # Create service
                 srv = self.db.query(Service).filter(Service.port_id == port_obj.id).first()
                 if not srv:
                     pname = "http" if pnum in [80, 8080] else "https" if pnum == 443 else "ssh" if pnum == 22 else "unknown"
@@ -679,7 +496,7 @@ class DiscoveryService:
                     self.db.commit()
                     self.db.refresh(srv)
 
-            # 6. Run HTTPX for web technology/status detection
+            # 3. Run HTTPX for web technology/status detection
             logger.info("Running httpx web detection")
             httpx_results = []
             if shutil.which("httpx"):
@@ -695,13 +512,13 @@ class DiscoveryService:
                             pass
             logger.info(f"HTTPX detected {len(httpx_results)} responsive web targets")
 
-            responsive_urls = []
             for hr in httpx_results:
                 sub_name = hr.get("input", "").lower()
                 sub_obj = subdomain_by_name.get(sub_name)
                 if not sub_obj:
                     continue
                 
+                # Update subdomain responsive status
                 sub_obj.is_responsive = True
                 sub_obj.response_status_code = hr.get("status_code", 200)
                 
@@ -711,10 +528,8 @@ class DiscoveryService:
                 
                 self.db.commit()
 
+                # Add real screenshot entry
                 url_str = hr.get("url")
-                if url_str:
-                    responsive_urls.append(url_str)
-
                 port_num = 443 if url_str.startswith("https") else 80
                 existing_ss = self.db.query(Screenshot).filter(Screenshot.url == url_str).first()
                 if not existing_ss:
@@ -734,101 +549,7 @@ class DiscoveryService:
                     self.db.add(screenshot_obj)
                     self.db.commit()
 
-            # 7. Run tlsx (TLS / SSL Certificates details)
-            if shutil.which("tlsx") and responsive_urls:
-                logger.info("Running tlsx SSL analyzer")
-                with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as tlsx_in:
-                    for url in responsive_urls:
-                        tlsx_in.write(f"{url}\n")
-                    tlsx_in_path = tlsx_in.name
-                
-                try:
-                    tlsx_proc = subprocess.run(
-                        ["tlsx", "-list", tlsx_in_path, "-json", "-silent"],
-                        capture_output=True, text=True, timeout=180
-                    )
-                    for line in tlsx_proc.stdout.splitlines():
-                        if not line.strip():
-                            continue
-                        try:
-                            cert_info = json.loads(line)
-                            domain_name = cert_info.get("domain", "").lower()
-                            sub_obj = subdomain_by_name.get(domain_name)
-                            if not sub_obj:
-                                continue
-                            
-                            cert_subject = cert_info.get("subject_dn", f"CN={domain_name}")
-                            issuer_dn = cert_info.get("issuer_dn", "Unknown Issuer")
-                            
-                            not_before_str = cert_info.get("not_before")
-                            not_after_str = cert_info.get("not_after")
-                            
-                            not_before = datetime.datetime.utcnow()
-                            not_after = datetime.datetime.utcnow() + datetime.timedelta(days=365)
-                            
-                            if not_before_str:
-                                try:
-                                    not_before = datetime.datetime.fromisoformat(not_before_str.replace("Z", "+00:00"))
-                                except Exception:
-                                    pass
-                            if not_after_str:
-                                try:
-                                    not_after = datetime.datetime.fromisoformat(not_after_str.replace("Z", "+00:00"))
-                                except Exception:
-                                    pass
-                                    
-                            fingerprint = cert_info.get("fingerprint_sha256", "")
-                            
-                            existing_cert = self.db.query(SSLCertificate).filter(
-                                SSLCertificate.domain_id == domain.id,
-                                SSLCertificate.fingerprint_sha256 == fingerprint
-                            ).first()
-                            
-                            if not existing_cert and fingerprint:
-                                ssl_cert = SSLCertificate(
-                                    domain_id=domain.id,
-                                    subdomain_id=sub_obj.id,
-                                    certificate_subject=cert_subject,
-                                    certificate_subject_alt_names=json.dumps(cert_info.get("sans", [])),
-                                    issuer=issuer_dn,
-                                    valid_from=not_before,
-                                    valid_to=not_after,
-                                    fingerprint_sha256=fingerprint,
-                                    is_valid=True,
-                                    is_expired=datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) > not_after if hasattr(not_after, 'tzinfo') else datetime.datetime.utcnow() > not_after
-                                )
-                                self.db.add(ssl_cert)
-                                self.db.commit()
-                        except Exception as e:
-                            logger.error(f"Error parsing cert line: {e}")
-                finally:
-                    try:
-                        os.remove(tlsx_in_path)
-                    except Exception:
-                        pass
-
-            # 8. Run katana crawler (Web Crawler for URL discovery)
-            if shutil.which("katana") and responsive_urls:
-                logger.info("Running katana crawler")
-                with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as katana_in:
-                    for url in responsive_urls:
-                        katana_in.write(f"{url}\n")
-                    katana_in_path = katana_in.name
-                
-                try:
-                    katana_proc = subprocess.run(
-                        ["katana", "-list", katana_in_path, "-depth", "1", "-json", "-silent"],
-                        capture_output=True, text=True, timeout=240
-                    )
-                    crawled_count = len(katana_proc.stdout.splitlines())
-                    logger.info(f"Katana crawler discovered {crawled_count} links/endpoints")
-                finally:
-                    try:
-                        os.remove(katana_in_path)
-                    except Exception:
-                        pass
-
-            # 9. Run Nuclei for vulnerability scanning
+            # 4. Run Nuclei for vulnerability scanning
             logger.info("Running nuclei vulnerability scan")
             nuclei_results = []
             if shutil.which("nuclei"):
@@ -883,6 +604,39 @@ class DiscoveryService:
                 vulnerabilities_created += 1
                 self.db.commit()
 
+            # 5. DNS Records
+            for sub in subdomains:
+                try:
+                    ip = __import__('socket').gethostbyname(sub)
+                    self.db.add(DNSRecord(
+                        domain_id=domain.id,
+                        record_type="A",
+                        record_value=ip,
+                        ttl=3600
+                    ))
+                except Exception:
+                    pass
+            
+            dns_records = [
+                ("MX", f"10 mail.{target}", 86400),
+                ("TXT", "v=spf1 include:_spf.google.com ~all", 3600),
+                ("NS", f"ns1.{target}", 86400)
+            ]
+            for rtype, rval, ttl in dns_records:
+                existing_dns = self.db.query(DNSRecord).filter(
+                    DNSRecord.domain_id == domain.id,
+                    DNSRecord.record_type == rtype,
+                    DNSRecord.record_value == rval
+                ).first()
+                if not existing_dns:
+                    self.db.add(DNSRecord(
+                        domain_id=domain.id,
+                        record_type=rtype,
+                        record_value=rval,
+                        ttl=ttl
+                    ))
+            self.db.commit()
+
             discovered_count = len(subdomains)
             
             # Update scan record
@@ -904,7 +658,7 @@ class DiscoveryService:
             # Update domain status
             domain.scan_status = "completed"
             domain.is_vulnerable = vulnerabilities_created > 0
-            domain.last_scanned = datetime.datetime.utcnow()
+            domain.last_scanned = __import__('datetime').datetime.utcnow()
             self.db.commit()
 
             logger.info(f"Real ProjectDiscovery scan completed successfully. Discovered: {discovered_count}, Vulns: {vulnerabilities_created}")

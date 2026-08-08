@@ -40,24 +40,24 @@ echo ""
 echo "[*] Installing ProjectDiscovery tools..."
 
 TOOLS="
-github.com/projectdiscovery/subfinder/v2/cmd/subfinder
-github.com/projectdiscovery/dnsx/cmd/dnsx
-github.com/projectdiscovery/httpx/cmd/httpx
-github.com/projectdiscovery/naabu/v2/cmd/naabu
-github.com/projectdiscovery/nuclei/v3/cmd/nuclei
-github.com/projectdiscovery/katana/cmd/katana
-github.com/projectdiscovery/uncover/cmd/uncover
-github.com/projectdiscovery/tlsx/cmd/tlsx
-github.com/projectdiscovery/alterx/cmd/alterx
-github.com/projectdiscovery/asnmap/cmd/asnmap
-github.com/projectdiscovery/mapcidr/cmd/mapcidr
-github.com/projectdiscovery/cdncheck/cmd/cdncheck
-github.com/projectdiscovery/notify/cmd/notify
-github.com/projectdiscovery/proxify/cmd/proxify
-github.com/projectdiscovery/shuffledns/cmd/shuffledns
-github.com/projectdiscovery/interactsh/cmd/interactsh-client
-github.com/projectdiscovery/chaos-client/cmd/chaos
-github.com/projectdiscovery/urlfinder/cmd/urlfinder
+github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+github.com/projectdiscovery/httpx/cmd/httpx@latest
+github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+github.com/projectdiscovery/katana/cmd/katana@latest
+github.com/projectdiscovery/uncover/cmd/uncover@latest
+github.com/projectdiscovery/tlsx/cmd/tlsx@latest
+github.com/projectdiscovery/alterx/cmd/alterx@latest
+github.com/projectdiscovery/asnmap/cmd/asnmap@latest
+github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest
+github.com/projectdiscovery/cdncheck/cmd/cdncheck@latest
+github.com/projectdiscovery/notify/cmd/notify@latest
+github.com/projectdiscovery/proxify/cmd/proxify@latest
+github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest
+github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+github.com/projectdiscovery/chaos-client/cmd/chaos@latest
+github.com/projectdiscovery/urlfinder/cmd/urlfinder@latest
 "
 
 for TOOL in $TOOLS; do

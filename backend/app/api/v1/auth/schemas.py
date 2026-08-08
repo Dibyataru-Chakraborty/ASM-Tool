@@ -59,13 +59,12 @@ class LoginResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     role: str
-    platform_role: Optional[str] = None
-    organization_id: Optional[str] = None
-    organization_name: Optional[str] = None
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int
+    platform_role: Optional[str] = None
+    organization_id: Optional[str] = None
 
 
 class RegisterResponse(BaseModel):

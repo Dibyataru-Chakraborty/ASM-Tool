@@ -285,7 +285,7 @@ function CompanyDomainsContent() {
     setLoading(true);
     try {
       const d = await asm.getAssets({ limit: 100 });
-      setTargets(d.assets || []);
+      setTargets(d.items || d.assets || []);
     } finally {
       setLoading(false);
     }

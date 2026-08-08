@@ -60,6 +60,46 @@ services:
     networks:
       - asm_network
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asm_worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - screenshots:/app/screenshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.scan_tasks.celery_app worker --loglevel=info --concurrency=1
+    networks:
+      - asm_network
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asm_beat
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - screenshots:/app/screenshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.scan_tasks.celery_app beat --loglevel=info
+    networks:
+      - asm_network
+
 
 
   frontend:

@@ -10,7 +10,6 @@ from app.repositories.scan_repo import ScanRepository
 from app.exceptions import NotFoundError, ValidationError
 from app.api.v1.scans.schemas import (
     ScanInitiateRequest,
-    TriggerScanRequest,
     ScanResponse,
     DomainDiscoveryRequest,
     DomainDiscoveryResponse,
@@ -24,51 +23,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 
-@router.post("/trigger", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_scan(
-    request: TriggerScanRequest,
-    background_tasks: BackgroundTasks,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Trigger a scan for an asset using its saved target field."""
+async def _run_legacy_scan(scan_id: str, domain_id: str):
+    """Real scan runner — delegates to the production scan pipeline."""
+    from app.utils.database import SessionLocal
+    from app.models import Domain
+    from app.services.scanner_pipeline import ScanPipeline
+    from app.models.scan_models import ASMAsset
+
+    db = SessionLocal()
     try:
-        from app.models import Asset, Domain
-        asset = db.query(Asset).filter(
-            Asset.id == request.asset_id,
-            Asset.user_id == current_user.id
-        ).first()
-        if not asset:
-            raise HTTPException(status_code=404, detail="Asset not found")
-
-        service = DiscoveryService(db)
-
-        # Resolve target: use asset.target (saved from the form), fallback to asset.name
-        target_value = (asset.target or asset.name or "").strip()
-
-        # Find or create a domain entry for this target
-        existing_domain = db.query(Domain).filter(Domain.asset_id == asset.id).first()
-        if existing_domain:
-            domain_id = existing_domain.id
-        else:
-            domain_name = target_value if service._is_valid_domain(target_value) else "target.local"
-            domain = service.create_domain(asset.id, domain_name)
-            domain_id = domain.id
-
-        scan = service.initiate_scan(
-            asset_id=asset.id,
-            domain_id=domain_id,
-            scan_type=request.scan_type
-        )
-
-        background_tasks.add_task(service.run_scan_simulation, scan.id, domain_id)
-
-        return {"scan_job_id": scan.id, "status": scan.status, "asset_id": asset.id}
-    except HTTPException:
-        raise
+        dom = db.get(Domain, domain_id)
+        if not dom:
+            return
+        # Build a lightweight asset-like object for the pipeline
+        from app.models.scan_models import ScanJob, ASMAsset as ProdAsset
+        prod_asset = db.query(ProdAsset).filter(ProdAsset.target == dom.domain).first()
+        if prod_asset:
+            job = ScanJob(id=scan_id, asset_id=prod_asset.id,
+                         triggered_by="legacy", status="running")
+            pipeline = ScanPipeline(db, scan_id)
+            import asyncio
+            asyncio.run(pipeline.run(prod_asset))
     except Exception as e:
-        logger.error(f"Error triggering scan: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to trigger scan: {str(e)}")
+        import logging
+        logging.getLogger(__name__).error(f"Legacy scan {scan_id} failed: {e}")
+    finally:
+        db.close()
 
 
 @router.post("/discover", response_model=DomainDiscoveryResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -92,8 +72,8 @@ async def initiate_domain_discovery(
             scan_type="discovery"
         )
 
-        # Trigger the simulated scan in background
-        background_tasks.add_task(service.run_scan_simulation, scan.id, domain.id)
+        # Trigger real scan via ASM pipeline
+        background_tasks.add_task(_run_legacy_scan, scan.id, domain.id)
 
         return {
             "domain_id": domain.id,
@@ -135,7 +115,7 @@ async def initiate_scan(
                 if first_domain:
                     domain_id = first_domain.id
                 else:
-                    # Create a default placeholder domain based on asset name
+                    # Find or create domain record based on asset name
                     from app.models import Asset
                     asset = db.query(Asset).filter(Asset.id == request.asset_id).first()
                     domain_name = asset.name if asset else "target.local"
@@ -150,8 +130,8 @@ async def initiate_scan(
             scan_type=request.scan_type
         )
 
-        # Trigger the simulated scan in background
-        background_tasks.add_task(service.run_scan_simulation, scan.id, domain_id)
+        # Trigger real scan via ASM pipeline
+        background_tasks.add_task(_run_legacy_scan, scan.id, domain_id)
 
         return scan
     except (NotFoundError, ValidationError) as e:
@@ -164,24 +144,17 @@ async def initiate_scan(
 
 @router.get("", response_model=ScanListResponse)
 async def list_scans(
-    asset_id: str = Query(None),
+    asset_id: str = Query(...),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List scans for an asset or all scans for current user."""
+    """List scans for an asset."""
     try:
         scan_repo = ScanRepository(db)
-        if asset_id:
-            scans, total = scan_repo.get_by_asset_id(asset_id, skip, limit)
-        else:
-            # Return all scans belonging to the current user's assets
-            from app.models import Scan, Asset
-            query = db.query(Scan).join(Asset).filter(Asset.user_id == current_user.id)
-            total = query.count()
-            scans = query.order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
-
+        scans, total = scan_repo.get_by_asset_id(asset_id, skip, limit)
+        
         return {
             "total": total,
             "skip": skip,

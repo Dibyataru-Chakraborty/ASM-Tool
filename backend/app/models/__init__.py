@@ -51,3 +51,9 @@ __all__ = [
     "Report",
     "BackupRestore",
 ]
+
+# Production ASM Models (Phase Production)
+from app.models.scan_models import (
+    ASMAsset, ScanSchedule, ScanJob, ToolExecution,
+    VulnFinding, VulnScreenshot, ScanReport, ScanLog
+)

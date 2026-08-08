@@ -20,6 +20,7 @@ import {
   Users,
   Building2,
   ArrowLeftCircle,
+  Zap,
 } from "lucide-react";
 const asmSections = [
   {
@@ -56,6 +57,7 @@ const asmSections = [
       { href: "/vulnerabilities", icon: Bug, label: "Vulnerabilities" },
       { href: "/scans", icon: History, label: "Discovery History" },
       { href: "/reports", icon: FileText, label: "Reports" },
+      { href: "/pentest", icon: Zap, label: "AI Pentest" },
     ],
   },
 ];

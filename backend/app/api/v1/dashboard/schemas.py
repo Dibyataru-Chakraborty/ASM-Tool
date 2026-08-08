@@ -70,9 +70,3 @@ class DashboardFullResponse(BaseModel):
     vulnerable_domains: List[VulnerableDomain]
     scan_statistics: ScanStatistics
     heatmap: List[HeatmapEntry]
-    
-    # Front-end compatibility fields
-    scans: Optional[dict] = None
-    vulnerabilities: Optional[dict] = None
-    running_scans: Optional[list] = None
-    assets: Optional[int] = 0

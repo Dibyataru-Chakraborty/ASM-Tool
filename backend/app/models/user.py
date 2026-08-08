@@ -25,6 +25,13 @@ class User(Base, TimestampMixin):
         index=True
     )  # admin, analyst, viewer
 
+    tenant_id = Column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Account status
     is_active = Column(Boolean, default=True, index=True)
     is_verified = Column(Boolean, default=False)
@@ -32,8 +39,6 @@ class User(Base, TimestampMixin):
     # MFA (Phase 8)
     mfa_enabled = Column(Boolean, default=False)
     mfa_secret = Column(String(255), nullable=True)
-    
-    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
 
     # Relations
     assets = relationship("Asset", back_populates="owner", cascade="all, delete-orphan")

@@ -2,7 +2,7 @@
 Asset model representing an organization/target for reconnaissance.
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index, DateTime
+from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, get_uuid
 
@@ -14,16 +14,11 @@ class Asset(Base, TimestampMixin):
 
     id = Column(String(36), primary_key=True, default=get_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-
-    # The actual target value (domain, IP, CIDR, URL) to scan
-    target = Column(String(512), nullable=True, index=True)
-
-    # Comma-separated tags for filtering/grouping
-    tags = Column(Text, nullable=True, default="")
-
+    
     # Asset classification
     asset_type = Column(
         String(50),
@@ -31,7 +26,7 @@ class Asset(Base, TimestampMixin):
         default="domain",
         index=True
     )  # domain, ip, subnet, organization
-
+    
     # Status
     status = Column(
         String(50),
@@ -39,14 +34,13 @@ class Asset(Base, TimestampMixin):
         default="active",
         index=True
     )  # active, archived, monitoring
-
+    
     # Risk scoring
     risk_score = Column(Integer, default=0, index=True)
-
-    # Scan tracking
-    scan_count = Column(Integer, default=0)
-    last_scanned_at = Column(DateTime(timezone=True), nullable=True)
-
+    
+    criticality = Column(String(50), nullable=True, default="medium")
+    ownership_status = Column(String(50), nullable=True, default="confirmed")
+    
     # Relations
     owner = relationship("User", back_populates="assets")
     domains = relationship("Domain", back_populates="asset", cascade="all, delete-orphan")
@@ -57,9 +51,5 @@ class Asset(Base, TimestampMixin):
         Index("idx_assets_risk_score", "risk_score"),
     )
 
-    @property
-    def is_active(self):
-        return self.status == "active"
-
     def __repr__(self):
-        return f"<Asset(id={self.id}, name={self.name}, target={self.target}, type={self.asset_type})>"
+        return f"<Asset(id={self.id}, name={self.name}, type={self.asset_type})>"

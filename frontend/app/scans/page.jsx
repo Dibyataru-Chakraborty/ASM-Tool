@@ -56,7 +56,7 @@ export default function ScansPage() {
       p.limit = 100;
     }
     const [s, a] = await Promise.all([asm.getScans(p), asm.getAssets()]);
-    const assetRows = a.assets || [];
+    const assetRows = a.items || a.assets || [];
     const assetById = new Map(assetRows.map((asset) => [asset.id, asset]));
     const scanRows = (s.items || s.scans || []).map((scan) => {
       const asset = assetById.get(scan.asset_id);

@@ -2,7 +2,7 @@
 Pydantic schemas for asset request/response validation.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -10,60 +10,59 @@ from datetime import datetime
 class AssetCreateRequest(BaseModel):
     """Create asset request."""
     name: str = Field(..., min_length=1, max_length=255)
-    target: Optional[str] = Field(None, max_length=512)
     description: Optional[str] = None
-    asset_type: str = Field(default="domain")
-    tags: Optional[list[str]] = []
+    asset_type: str = Field(default="domain", pattern="^(domain|ip|subnet|organization|ip_range|web_application|mobile_app|cloud_service)$")
+
+    @field_validator("name")
+    def validate_name(cls, v):
+        blocked = [";", "&", "|", "$", "<", ">", '"', "'", "`"]
+        for b in blocked:
+            if b in v:
+                raise ValueError(f"Character '{b}' is not allowed in name")
+        return v
+
+    @field_validator("description")
+    def sanitize_description(cls, v):
+        if v:
+            return v.replace("<", "").replace(">", "")
+        return v
 
 
 class AssetUpdateRequest(BaseModel):
     """Update asset request."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    target: Optional[str] = Field(None, max_length=512)
     description: Optional[str] = None
     status: Optional[str] = Field(None, pattern="^(active|archived|monitoring)$")
-    tags: Optional[list[str]] = None
+
+    @field_validator("name")
+    def validate_name(cls, v):
+        if v:
+            blocked = [";", "&", "|", "$", "<", ">", '"', "'", "`"]
+            for b in blocked:
+                if b in v:
+                    raise ValueError(f"Character '{b}' is not allowed in name")
+        return v
+
+    @field_validator("description")
+    def sanitize_description(cls, v):
+        if v:
+            return v.replace("<", "").replace(">", "")
+        return v
 
 
 class AssetResponse(BaseModel):
     """Asset in responses."""
     id: str
     name: str
-    target: Optional[str] = None
     description: Optional[str] = None
     asset_type: str
     status: str
-    is_active: bool = True
     risk_score: int
-    tags: list[str] = []
-    scan_count: int = 0
-    last_scanned_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
-
-    @classmethod
-    def from_orm_asset(cls, asset):
-        """Build response, splitting comma-separated tags string."""
-        tags_raw = asset.tags or ""
-        tags = [t.strip() for t in tags_raw.split(',') if t.strip()] if tags_raw else []
-        return cls(
-            id=asset.id,
-            name=asset.name,
-            target=asset.target,
-            description=asset.description,
-            asset_type=asset.asset_type,
-            status=asset.status,
-            is_active=asset.status == 'active',
-            risk_score=asset.risk_score,
-            tags=tags,
-            scan_count=asset.scan_count or 0,
-            last_scanned_at=asset.last_scanned_at,
-            created_at=asset.created_at,
-            updated_at=asset.updated_at,
-        )
 
 
 class AssetDetailResponse(AssetResponse):
@@ -79,7 +78,6 @@ class AssetListResponse(BaseModel):
     skip: int
     limit: int
     items: list[AssetResponse]
-    assets: list[AssetResponse] = []
 
 
 class AssetStatsResponse(BaseModel):

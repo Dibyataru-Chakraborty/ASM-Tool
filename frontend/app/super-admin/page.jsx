@@ -724,7 +724,7 @@ export function SuperAdminContent() {
 
                           <button
                             type="button"
-                            className="btn-secondary flex items-center gap-1 border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                            className="btn-primary flex items-center gap-1 border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20"
                             disabled={working === org.id}
                             onClick={() => deleteOrganization(org)}
                           >

@@ -93,3 +93,39 @@ class AssetRepository(BaseRepository[Asset]):
     def update_risk_score(self, asset_id: str, score: int) -> Optional[Asset]:
         """Update asset risk score."""
         return self.update(asset_id, {"risk_score": score})
+
+    def get_by_tenant_id(self, tenant_id: str, skip: int = 0, limit: int = 100):
+        """Get all assets for a tenant."""
+        try:
+            query = self.db.query(Asset).filter(Asset.tenant_id == tenant_id)
+            total = query.count()
+            assets = query.offset(skip).limit(limit).all()
+            return assets, total
+        except Exception as e:
+            logger.error(f"Error fetching assets for tenant: {str(e)}")
+            return [], 0
+
+    def get_active_assets_by_tenant(self, tenant_id: str, skip: int = 0, limit: int = 100):
+        """Get active assets for a tenant."""
+        try:
+            query = self.db.query(Asset).filter(
+                Asset.tenant_id == tenant_id,
+                Asset.status == "active"
+            )
+            total = query.count()
+            assets = query.offset(skip).limit(limit).all()
+            return assets, total
+        except Exception as e:
+            logger.error(f"Error fetching active assets for tenant: {str(e)}")
+            return [], 0
+
+    def get_by_tenant_and_name(self, tenant_id: str, name: str) -> Optional[Asset]:
+        """Get asset by tenant and name."""
+        try:
+            return self.db.query(Asset).filter(
+                Asset.tenant_id == tenant_id,
+                Asset.name == name
+            ).first()
+        except Exception as e:
+            logger.error(f"Error fetching asset by tenant and name: {str(e)}")
+            return None

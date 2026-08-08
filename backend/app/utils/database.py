@@ -2,7 +2,7 @@
 Database connection and session management.
 """
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 from app.config import settings
@@ -62,6 +62,10 @@ def get_db(request: Request = None) -> Session:
                     user_id = JWTUtils.extract_user_id(token)
                     if user_id:
                         db.execute(text("SET app.current_user_id = :user_id"), {"user_id": user_id})
+                        from app.models.user import User
+                        user = db.query(User).filter(User.id == user_id).first()
+                        if user and user.role == "admin":
+                            db.execute(text("SET app.bypass_rls = 'true'"))
                 except Exception:
                     pass
         yield db
@@ -70,51 +74,16 @@ def get_db(request: Request = None) -> Session:
 
 
 def init_db():
-    """Initialize database schema and bootstrap super admin."""
-    from app.models import Base, User
-    from app.security import PasswordUtils
-    
+    """Initialize database schema."""
+    from app.models import Base
     Base.metadata.create_all(bind=engine)
-    logger.info("Database schema initialized")
-    
-    # Bootstrap super admin if configured
-    if settings.bootstrap_super_admin_email and settings.bootstrap_super_admin_password:
-        email = settings.bootstrap_super_admin_email.strip()
-        raw_password = settings.bootstrap_super_admin_password.strip()
-        # Remove surrounding quotes from environment variable if present
-        if (raw_password.startswith("'") and raw_password.endswith("'")) or \
-           (raw_password.startswith('"') and raw_password.endswith('"')):
-            raw_password = raw_password[1:-1]
-            
-        name = settings.bootstrap_super_admin_name or "Super Admin"
-        
-        db = SessionLocal()
+    with engine.begin() as conn:
         try:
-            # Check if user already exists and delete them to recreate/reset
-            existing_user = db.query(User).filter(User.email == email).first()
-            if existing_user:
-                logger.info(f"Removing existing super admin user {email} for recreation")
-                db.delete(existing_user)
-                db.commit()
-                
-            logger.info(f"Creating bootstrap super admin user: {email}")
-            hashed_pw = PasswordUtils.hash_password(raw_password)
-            super_admin = User(
-                email=email,
-                password_hash=hashed_pw,
-                full_name=name,
-                role="admin",
-                is_active=True,
-                is_verified=True
-            )
-            db.add(super_admin)
-            db.commit()
-            logger.info("Super admin user successfully bootstrapped")
+            conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS criticality VARCHAR(50) DEFAULT 'medium'"))
+            conn.execute(text("ALTER TABLE assets ADD COLUMN IF NOT EXISTS ownership_status VARCHAR(50) DEFAULT 'confirmed'"))
         except Exception as e:
-            logger.error(f"Error bootstrapping super admin: {str(e)}")
-            db.rollback()
-        finally:
-            db.close()
+            logger.error(f"Error running manual migrations: {e}")
+    logger.info("Database schema initialized")
 
 
 def close_db():

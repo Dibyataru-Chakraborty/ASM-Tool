@@ -18,6 +18,12 @@ export function AuthProvider({ children }) {
   const router = useRouter();
   const refreshUser = async () => {
     const me = await api.getMe();
+    if (me) {
+      me.organization_role = me.role;
+      if (me.platform_role === "super_admin") {
+        me.organization_id = localStorage.getItem("active_organization_id") || null;
+      }
+    }
     setUser(me);
   };
   useEffect(() => {

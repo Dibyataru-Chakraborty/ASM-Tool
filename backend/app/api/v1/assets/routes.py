@@ -2,7 +2,7 @@
 Assets API routes for managing reconnaissance targets.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from app.utils.database import get_db
 from app.services.asset_service import AssetService
@@ -28,55 +28,25 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     request: AssetCreateRequest,
-    background_tasks: BackgroundTasks,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new asset and automatically trigger a background discovery scan if it is a domain."""
+    """Create a new asset."""
     try:
+        org_id = req.headers.get("X-Organization-ID")
+        if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+            org_id = current_user.tenant_id
+
         service = AssetService(db)
         asset = service.create_asset(
             user_id=current_user.id,
             name=request.name,
-            target=request.target,
             description=request.description,
             asset_type=request.asset_type,
-            tags=request.tags or []
+            tenant_id=org_id
         )
-        
-        # If it's a domain asset, automatically seed the Domain and kick off discovery scan
-        if asset.asset_type == "domain":
-            from app.models import Domain
-            from app.services.discovery_service import DiscoveryService
-            
-            target_val = (request.target or request.name or "").strip().lower()
-            clean_domain = target_val.replace("http://", "").replace("https://", "").split("/")[0]
-            
-            existing_domain = db.query(Domain).filter(Domain.asset_id == asset.id).first()
-            if not existing_domain:
-                domain_obj = Domain(
-                    asset_id=asset.id,
-                    domain=clean_domain,
-                    scan_status="pending"
-                )
-                db.add(domain_obj)
-                db.commit()
-                db.refresh(domain_obj)
-                domain_id = domain_obj.id
-            else:
-                domain_id = existing_domain.id
-                
-            # Trigger real / simulated scan pipeline in background
-            discovery_service = DiscoveryService(db)
-            scan = discovery_service.initiate_scan(
-                asset_id=asset.id,
-                domain_id=domain_id,
-                scan_type="discovery"
-            )
-            background_tasks.add_task(discovery_service.run_scan_simulation, scan.id, domain_id)
-            logger.info(f"Automatically triggered background discovery scan {scan.id} for asset {asset.id} (Domain: {clean_domain})")
-            
-        return AssetResponse.from_orm_asset(asset)
+        return asset
     except (ConflictError, ValidationError) as e:
         status_code = 409 if isinstance(e, ConflictError) else 422
         raise HTTPException(status_code=status_code, detail=e.message)
@@ -87,30 +57,25 @@ async def create_asset(
 
 @router.get("", response_model=AssetListResponse)
 async def list_assets(
+    req: Request,
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-    search: str = Query(None),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List all assets for current user."""
+    """List all assets for current user or tenant."""
     try:
+        org_id = req.headers.get("X-Organization-ID")
+        if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+            org_id = current_user.tenant_id
+
         service = AssetService(db)
-        assets, total = service.list_active_assets(current_user.id, skip, limit)
-
-        # Apply in-memory search filter if requested
-        if search:
-            s = search.lower()
-            assets = [a for a in assets if s in (a.name or '').lower() or s in (a.target or '').lower()]
-            total = len(assets)
-
-        serialized = [AssetResponse.from_orm_asset(a) for a in assets]
+        assets, total = service.list_active_assets(current_user.id, skip, limit, tenant_id=org_id)
         return {
             "total": total,
             "skip": skip,
             "limit": limit,
-            "items": serialized,
-            "assets": serialized
+            "items": assets
         }
     except Exception as e:
         logger.error(f"Error listing assets: {str(e)}")
@@ -120,18 +85,22 @@ async def list_assets(
 @router.get("/{asset_id}", response_model=AssetDetailResponse)
 async def get_asset(
     asset_id: str,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get asset details."""
     try:
-        service = AssetService(db)
-        asset = service.get_asset(asset_id, current_user.id)
-        stats = service.get_asset_stats(asset_id, current_user.id)
+        org_id = req.headers.get("X-Organization-ID")
+        if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+            org_id = current_user.tenant_id
 
-        base = AssetResponse.from_orm_asset(asset)
+        service = AssetService(db)
+        asset = service.get_asset(asset_id, current_user.id, tenant_id=org_id)
+        stats = service.get_asset_stats(asset_id, current_user.id)
+        
         return {
-            **base.model_dump(),
+            **asset.__dict__,
             "total_domains": stats["total_domains"],
             "total_subdomains": stats["total_subdomains"],
             "vulnerable_domains": stats["vulnerable_domains"],
@@ -149,22 +118,25 @@ async def get_asset(
 async def update_asset(
     asset_id: str,
     request: AssetUpdateRequest,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update an asset."""
     try:
+        org_id = req.headers.get("X-Organization-ID")
+        if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+            org_id = current_user.tenant_id
+
         service = AssetService(db)
         asset = service.update_asset(
             asset_id=asset_id,
             user_id=current_user.id,
             name=request.name,
-            target=request.target,
             description=request.description,
-            status=request.status,
-            tags=request.tags
+            status=request.status
         )
-        return AssetResponse.from_orm_asset(asset)
+        return asset
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     except (ValidationError, ConflictError) as e:
@@ -178,11 +150,16 @@ async def update_asset(
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_asset(
     asset_id: str,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete an asset."""
     try:
+        org_id = req.headers.get("X-Organization-ID")
+        if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+            org_id = current_user.tenant_id
+
         service = AssetService(db)
         service.delete_asset(asset_id, current_user.id)
     except NotFoundError as e:
@@ -237,6 +214,7 @@ async def get_asset_stats(
 @router.get("/{asset_id}/subdomains")
 async def get_asset_subdomains(
     asset_id: str,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -244,7 +222,16 @@ async def get_asset_subdomains(
     from app.models import Domain, Subdomain, Asset
     from app.models.phase2 import Port
     
-    asset = db.query(Asset).filter(Asset.id == asset_id, Asset.user_id == current_user.id).first()
+    org_id = req.headers.get("X-Organization-ID")
+    if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+        org_id = current_user.tenant_id
+
+    query = db.query(Asset).filter(Asset.id == asset_id)
+    if org_id:
+        query = query.filter(Asset.tenant_id == org_id)
+    else:
+        query = query.filter(Asset.user_id == current_user.id)
+    asset = query.first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
         
@@ -268,13 +255,23 @@ async def get_asset_subdomains(
 @router.get("/{asset_id}/screenshots")
 async def get_asset_screenshots(
     asset_id: str,
+    req: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get list of screenshots for an asset."""
     from app.models import Domain, Subdomain, Asset, Screenshot
     
-    asset = db.query(Asset).filter(Asset.id == asset_id, Asset.user_id == current_user.id).first()
+    org_id = req.headers.get("X-Organization-ID")
+    if not org_id or current_user.role != "admin" or (current_user.role == "admin" and current_user.tenant_id is not None):
+        org_id = current_user.tenant_id
+
+    query = db.query(Asset).filter(Asset.id == asset_id)
+    if org_id:
+        query = query.filter(Asset.tenant_id == org_id)
+    else:
+        query = query.filter(Asset.user_id == current_user.id)
+    asset = query.first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
         

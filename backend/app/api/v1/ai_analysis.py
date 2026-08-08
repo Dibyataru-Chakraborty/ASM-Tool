@@ -22,7 +22,7 @@ router = APIRouter(prefix="/ai", tags=["ai-analysis"])
 @router.post("/analyze/vulnerability/{vulnerability_id}")
 async def analyze_vulnerability(
     vulnerability_id: str,
-    provider: str = Query("claude", regex="^(claude|openai|gemini|all)$"),
+    provider: str = Query("claude", pattern="^(claude|openai|gemini|all)$"),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -65,7 +65,7 @@ async def analyze_vulnerability(
 @router.post("/remediate/{vulnerability_id}")
 async def get_remediation_steps(
     vulnerability_id: str,
-    ai_provider: str = Query("claude", regex="^(claude|openai)$"),
+    ai_provider: str = Query("claude", pattern="^(claude|openai)$"),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -197,7 +197,7 @@ async def generate_executive_report(
 @router.get("/explain/{vulnerability_id}")
 async def explain_vulnerability(
     vulnerability_id: str,
-    audience: str = Query("technical", regex="^(technical|manager|developer)$"),
+    audience: str = Query("technical", pattern="^(technical|manager|developer)$"),
     ai_provider: str = Query("claude"),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)

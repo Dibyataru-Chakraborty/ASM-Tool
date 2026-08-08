@@ -118,6 +118,7 @@ class AuthService:
 
         logger.info(f"User logged in: {user.email}")
 
+        platform_role = "super_admin" if user.role == "admin" and getattr(user, "tenant_id", None) is None else user.role
         return {
             "user_id": user.id,
             "email": user.email,
@@ -127,6 +128,8 @@ class AuthService:
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": 30 * 60,  # 30 minutes
+            "platform_role": platform_role,
+            "organization_id": getattr(user, "tenant_id", None)
         }
 
     def refresh_access_token(self, refresh_token: str) -> Dict[str, str]:

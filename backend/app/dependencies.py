@@ -15,24 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 async def get_current_user_id(
-    request: Request,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
 ) -> str:
-    """Extract and validate current user from JWT token (header or cookie)."""
-    token = None
-    if authorization:
-        try:
-            scheme, token = authorization.split()
-            if scheme.lower() != "bearer":
-                token = None
-        except ValueError:
-            pass
+    """Extract and validate current user from JWT token."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
 
-    if not token:
-        token = request.cookies.get("access_token")
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authorization header or cookie")
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            raise ValueError("Invalid authorization scheme")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
     try:
         user_id = JWTUtils.extract_user_id(token)
@@ -42,37 +36,15 @@ async def get_current_user_id(
 
 
 async def get_current_user(
-    request: Request,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
     """Get current user from database."""
     from app.models import User
-    from sqlalchemy import text
     
     user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-        
-    org_id = request.headers.get("X-Organization-ID")
-    path = request.url.path
-    logger.info(f"get_current_user lookup: user_id={user.id}, role={user.role}, tenant_id={user.tenant_id}, org_id={org_id}, path={path}")
-        
-    # If the user is a super admin, and they are accessing a specific organization
-    # workspace (via X-Organization-ID header), impersonate that organization's admin user
-    if user.role == "admin" and user.tenant_id is None:
-        if org_id:
-            # Do not impersonate for platform-level super admin or auth routes
-            if not path.startswith("/api/v1/super-admin") and not path.startswith("/api/v1/auth"):
-                org_admin = db.query(User).filter(User.tenant_id == org_id, User.role == "admin").first()
-                if not org_admin:
-                    org_admin = db.query(User).filter(User.tenant_id == org_id).first()
-                if org_admin:
-                    logger.info(f"Super Admin impersonating tenant user {org_admin.email} (Tenant ID: {org_id})")
-                    db.execute(text("SET app.current_user_id = :user_id"), {"user_id": org_admin.id})
-                    return org_admin
-                else:
-                    logger.info(f"Impersonation target tenant {org_id} has no users!")
     
     return user
 
@@ -103,6 +75,28 @@ def require_admin():
 def require_analyst():
     """Dependency for analyst+ endpoints."""
     return require_role("admin", "analyst")
+
+
+async def check_write_permission(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Verify that viewer roles cannot execute state-changing HTTP methods."""
+    # Exclude authentication check paths to allow login, register, and refresh without headers
+    if "/auth/" in request.url.path:
+        return None
+
+    # Manually resolve the current user dependency for other routes
+    authorization = request.headers.get("authorization")
+    user_id = await get_current_user_id(authorization)
+    current_user = await get_current_user(db, user_id)
+
+    if current_user.role == "viewer" and request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Viewer role is restricted to read-only access. Write actions are not allowed."
+        )
+    return current_user
 
 
 class ServiceContainer:

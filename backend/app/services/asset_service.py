@@ -25,56 +25,66 @@ class AssetService:
         self,
         user_id: str,
         name: str,
-        target: Optional[str] = None,
         description: Optional[str] = None,
         asset_type: str = "domain",
-        tags: Optional[List[str]] = None,
+        tenant_id: Optional[str] = None,
     ) -> Asset:
         """Create a new asset."""
+        # Validate input
         if not name or len(name.strip()) == 0:
             raise ValidationError("Asset name cannot be empty")
 
-        existing = self.asset_repo.get_by_user_and_name(user_id, name)
-        if existing:
-            raise ConflictError(f"Asset '{name}' already exists for this user")
+        # Check for duplicates
+        if tenant_id:
+            existing = self.asset_repo.get_by_tenant_and_name(tenant_id, name)
+        else:
+            existing = self.asset_repo.get_by_user_and_name(user_id, name)
 
-        tags_str = ", ".join(tags) if tags else ""
+        if existing:
+            raise ConflictError(f"Asset '{name}' already exists")
+
+        # Create asset
         try:
             asset = self.asset_repo.create({
                 "user_id": user_id,
+                "tenant_id": tenant_id,
                 "name": name.strip(),
-                "target": (target or name).strip(),
                 "description": description,
                 "asset_type": asset_type,
                 "status": "active",
                 "risk_score": 0,
-                "tags": tags_str,
-                "scan_count": 0,
             })
-            logger.info(f"Asset created: {asset.id} for user {user_id}")
+            logger.info(f"Asset created: {asset.id} for tenant {tenant_id} (user {user_id})")
             return asset
         except Exception as e:
             logger.error(f"Error creating asset: {str(e)}")
             raise
 
-    def get_asset(self, asset_id: str, user_id: str) -> Asset:
+    def get_asset(self, asset_id: str, user_id: str, tenant_id: Optional[str] = None) -> Asset:
         """Get asset by ID (with ownership check)."""
         asset = self.asset_repo.get_by_id(asset_id)
         if not asset:
             raise NotFoundError("Asset")
 
         # Verify ownership
-        if asset.user_id != user_id:
+        if tenant_id:
+            if asset.tenant_id != tenant_id:
+                raise ValidationError("Unauthorized access to asset")
+        elif asset.user_id != user_id:
             raise ValidationError("Unauthorized access to asset")
 
         return asset
 
-    def list_assets(self, user_id: str, skip: int = 0, limit: int = 10) -> tuple[List[Asset], int]:
-        """List all assets for a user."""
+    def list_assets(self, user_id: str, skip: int = 0, limit: int = 10, tenant_id: Optional[str] = None) -> tuple[List[Asset], int]:
+        """List all assets for a user or tenant."""
+        if tenant_id:
+            return self.asset_repo.get_by_tenant_id(tenant_id, skip, limit)
         return self.asset_repo.get_by_user_id(user_id, skip, limit)
 
-    def list_active_assets(self, user_id: str, skip: int = 0, limit: int = 10) -> tuple[List[Asset], int]:
-        """List active assets for a user."""
+    def list_active_assets(self, user_id: str, skip: int = 0, limit: int = 10, tenant_id: Optional[str] = None) -> tuple[List[Asset], int]:
+        """List active assets for a user or tenant."""
+        if tenant_id:
+            return self.asset_repo.get_active_assets_by_tenant(tenant_id, skip, limit)
         return self.asset_repo.get_active_assets(user_id, skip, limit)
 
     def update_asset(
@@ -82,10 +92,8 @@ class AssetService:
         asset_id: str,
         user_id: str,
         name: Optional[str] = None,
-        target: Optional[str] = None,
         description: Optional[str] = None,
         status: Optional[str] = None,
-        tags: Optional[List[str]] = None,
     ) -> Asset:
         """Update an asset."""
         asset = self.get_asset(asset_id, user_id)
@@ -93,16 +101,12 @@ class AssetService:
         update_data = {}
         if name:
             update_data["name"] = name
-        if target is not None:
-            update_data["target"] = target
         if description is not None:
             update_data["description"] = description
         if status:
             if status not in ["active", "archived", "monitoring"]:
                 raise ValidationError("Invalid status value")
             update_data["status"] = status
-        if tags is not None:
-            update_data["tags"] = ", ".join(tags)
 
         if not update_data:
             return asset

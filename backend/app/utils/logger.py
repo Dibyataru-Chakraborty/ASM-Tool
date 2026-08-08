@@ -73,3 +73,8 @@ def setup_logging():
 
 # Setup on import
 logger = setup_logging()
+
+def get_logger(name: str) -> logging.Logger:
+    """Get a named logger instance."""
+    return logging.getLogger(name)
+

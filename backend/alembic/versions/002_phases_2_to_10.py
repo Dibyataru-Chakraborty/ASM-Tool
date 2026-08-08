@@ -113,7 +113,6 @@ def upgrade() -> None:
         sa.Column('cvss_score', sa.Float(), nullable=True),
         sa.Column('cvss_vector', sa.String(255), nullable=True),
         sa.Column('published_date', sa.String(), nullable=True),
-        sa.Column('is_false_positive', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
@@ -206,6 +205,7 @@ def upgrade() -> None:
     )
     op.create_index('idx_tenants_slug', 'tenants', ['slug'])
     op.add_column('users', sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='SET NULL'), nullable=True))
+    op.add_column('assets', sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=True))
 
     # Phase 8: Audit Logs table
     op.create_table(
@@ -261,6 +261,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade database schema."""
     op.drop_column('users', 'tenant_id')
+    op.drop_column('assets', 'tenant_id')
     op.drop_table('backups')
     op.drop_table('reports')
     op.drop_table('audit_logs')

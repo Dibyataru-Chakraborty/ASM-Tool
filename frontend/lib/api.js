@@ -263,3 +263,11 @@ export const asm = {
 };
 
 export default asm;
+
+// AI Pentest endpoints (5-phase automated pentest)
+export const pentest = {
+  startScan:  (target_url) => client.post("/api/v1/pentest/scan", { target_url }).then(r => r.data),
+  getScan:    (id) => client.get(`/api/v1/pentest/scan/${id}`).then(r => r.data),
+  listScans:  () => client.get("/api/v1/pentest/scans").then(r => r.data),
+  deleteScan: (id) => client.delete(`/api/v1/pentest/scan/${id}`).then(r => r.data),
+};

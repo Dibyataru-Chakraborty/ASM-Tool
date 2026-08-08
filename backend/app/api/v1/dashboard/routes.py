@@ -102,7 +102,6 @@ async def get_full_dashboard(
 ):
     """Get complete dashboard data (all widgets)."""
     try:
-        from app.models import Scan, Asset
         service = DashboardService(db)
         
         risk_summary = service.get_risk_summary(current_user.id)
@@ -111,51 +110,12 @@ async def get_full_dashboard(
         scan_stats = service.get_scan_statistics(current_user.id)
         heatmap = service.get_domain_risk_heatmap(current_user.id)
         
-        # Populate front-end compatibility data
-        scans = {
-            "total": scan_stats.get("total_scans", 0),
-            "completed": scan_stats.get("completed", 0),
-            "failed": scan_stats.get("failed", 0),
-            "running": scan_stats.get("running", 0),
-            "queued": scan_stats.get("pending", 0),
-        }
-        
-        vulnerabilities = {
-            "total": sum(risk_summary["risk_distribution"].values()),
-            "critical": risk_summary["risk_distribution"].get("critical", 0),
-            "high": risk_summary["risk_distribution"].get("high", 0),
-            "medium": risk_summary["risk_distribution"].get("medium", 0),
-            "low": risk_summary["risk_distribution"].get("low", 0),
-        }
-        
-        running_scans = db.query(Scan).join(Asset).filter(
-            Asset.user_id == current_user.id,
-            Scan.status.in_(["running", "pending"])
-        ).all()
-        
-        running_list = []
-        for s in running_scans:
-            running_list.append({
-                "id": s.id,
-                "asset_id": s.asset_id,
-                "asset_target": s.asset.name,
-                "status": s.status,
-                "current_tool": s.scan_type,
-                "progress": 50 if s.status == "running" else 0,
-            })
-            
-        assets_count = risk_summary.get("total_assets", 0)
-        
         return {
             "risk_summary": risk_summary,
             "timeline": timeline,
             "vulnerable_domains": vulnerable_domains,
             "scan_statistics": scan_stats,
             "heatmap": heatmap,
-            "scans": scans,
-            "vulnerabilities": vulnerabilities,
-            "running_scans": running_list,
-            "assets": assets_count,
         }
     except Exception as e:
         logger.error(f"Error getting full dashboard: {str(e)}")

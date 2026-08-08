@@ -4,7 +4,7 @@ Super Admin and Organization API routes.
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, List
 import uuid
 
@@ -23,6 +23,20 @@ class CreateOrgRequest(BaseModel):
     admin_email: str
     admin_password: str
 
+    @validator("name", "admin_name")
+    def validate_name(cls, v):
+        blocked = [";", "&", "|", "$", "<", ">", '"', "'", "`"]
+        for b in blocked:
+            if b in v:
+                raise ValueError(f"Character '{b}' is not allowed in names")
+        return v
+
+    @validator("description")
+    def sanitize_description(cls, v):
+        if v:
+            return v.replace("<", "").replace(">", "")
+        return v
+
 class UpdateOrgRequest(BaseModel):
     status: Optional[str] = None
     name: Optional[str] = None
@@ -32,11 +46,29 @@ class AssignAdminRequest(BaseModel):
     full_name: Optional[str] = None
     password: Optional[str] = None
 
+    @validator("full_name")
+    def validate_full_name(cls, v):
+        if v:
+            blocked = [";", "&", "|", "$", "<", ">", '"', "'", "`"]
+            for b in blocked:
+                if b in v:
+                    raise ValueError(f"Character '{b}' is not allowed in names")
+        return v
+
 class CreateUserRequest(BaseModel):
     email: str
     full_name: Optional[str] = None
     password: str
     role: Optional[str] = "analyst"
+
+    @validator("full_name")
+    def validate_full_name(cls, v):
+        if v:
+            blocked = [";", "&", "|", "$", "<", ">", '"', "'", "`"]
+            for b in blocked:
+                if b in v:
+                    raise ValueError(f"Character '{b}' is not allowed in names")
+        return v
 
 class UpdateUserStatusRequest(BaseModel):
     is_active: bool
@@ -52,7 +84,7 @@ async def get_overview(
     db: Session = Depends(get_db)
 ):
     """Get platform overview statistics and organizations list."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     tenants = db.query(Tenant).all()
@@ -127,7 +159,7 @@ async def get_organizations(
     db: Session = Depends(get_db)
 ):
     """Get all organizations (tenants)."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     tenants = db.query(Tenant).all()
@@ -154,7 +186,7 @@ async def create_organization(
     db: Session = Depends(get_db)
 ):
     """Create new organization and assign admin user."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     # Check if admin user email already exists
@@ -208,7 +240,7 @@ async def get_organization(
     db: Session = Depends(get_db)
 ):
     """Get organization by ID."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     tenant = db.query(Tenant).filter(Tenant.id == id).first()
@@ -236,7 +268,7 @@ async def update_organization(
     db: Session = Depends(get_db)
 ):
     """Update organization status or details."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     tenant = db.query(Tenant).filter(Tenant.id == id).first()
@@ -264,7 +296,7 @@ async def assign_organization_admin(
     db: Session = Depends(get_db)
 ):
     """Assign or update organization Admin."""
-    if current_user.role != "admin":
+    if current_user.role != "admin" or current_user.tenant_id is not None:
         raise HTTPException(status_code=403, detail="Super Admin role required")
         
     tenant = db.query(Tenant).filter(Tenant.id == id).first()
@@ -343,7 +375,8 @@ async def get_current_organization(
     """Get active organization details from X-Organization-ID header or user association."""
     org_id = request.headers.get("X-Organization-ID")
     # If no header, or user is not a super admin, default to user's associated tenant
-    if not org_id or current_user.role != "admin":
+    is_super_admin = (current_user.role == "admin" and current_user.tenant_id is None)
+    if not org_id or not is_super_admin:
         org_id = current_user.tenant_id
         
     if not org_id:
@@ -374,7 +407,8 @@ async def get_organization_users(
 ):
     """Get users in active organization."""
     org_id = request.headers.get("X-Organization-ID")
-    if not org_id or current_user.role != "admin":
+    is_super_admin = (current_user.role == "admin" and current_user.tenant_id is None)
+    if not org_id or not is_super_admin:
         org_id = current_user.tenant_id
         
     if not org_id:
@@ -403,7 +437,8 @@ async def create_organization_user(
 ):
     """Create new user in the active organization."""
     org_id = request.headers.get("X-Organization-ID")
-    if not org_id or current_user.role != "admin":
+    is_super_admin = (current_user.role == "admin" and current_user.tenant_id is None)
+    if not org_id or not is_super_admin:
         org_id = current_user.tenant_id
         
     if not org_id:
